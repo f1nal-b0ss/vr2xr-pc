@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 400" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#060911" />
+      <stop offset="50%" stop-color="#0c1426" />
+      <stop offset="100%" stop-color="#070b14" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="50%" stop-color="#818cf8" />
+      <stop offset="100%" stop-color="#34d399" />
+    </linearGradient>
+    <radialGradient id="domeGlow" cx="76%" cy="50%" r="42%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.28" />
+      <stop offset="55%" stop-color="#6366f1" stop-opacity="0.10" />
+      <stop offset="100%" stop-color="#060911" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1280" height="400" rx="24" fill="url(#bgGrad)" stroke="#1e293b" stroke-width="2" />
+  <rect width="1280" height="400" rx="24" fill="url(#domeGlow)" />
+
+  <!-- Right Side: 3D VR180 Spherical Geodesic Dome Illustration -->
+  <g transform="translate(960, 200)" opacity="0.9">
+    <circle cx="0" cy="0" r="155" fill="#091122" stroke="#38bdf8" stroke-width="2" stroke-opacity="0.45" />
+    <circle cx="0" cy="0" r="120" fill="none" stroke="#38bdf8" stroke-width="1.2" stroke-opacity="0.28" stroke-dasharray="6 4" />
+    <circle cx="0" cy="0" r="85" fill="none" stroke="#818cf8" stroke-width="1.5" stroke-opacity="0.35" />
+    <circle cx="0" cy="0" r="48" fill="none" stroke="#34d399" stroke-width="1.5" stroke-opacity="0.45" />
+    <ellipse cx="0" cy="0" rx="155" ry="62" fill="none" stroke="#38bdf8" stroke-width="1.2" stroke-opacity="0.3" />
+    <ellipse cx="0" cy="0" rx="62" ry="155" fill="none" stroke="#38bdf8" stroke-width="1.2" stroke-opacity="0.3" />
+    <line x1="-155" y1="0" x2="155" y2="0" stroke="#34d399" stroke-width="1.5" stroke-opacity="0.5" />
+    <line x1="0" y1="-155" x2="0" y2="155" stroke="#38bdf8" stroke-width="1.5" stroke-opacity="0.5" />
+
+    <!-- Stylized XREAL One Pro AR Glasses Icon in Center of Dome -->
+    <g transform="translate(0, -6)">
+      <rect x="-86" y="-26" width="76" height="46" rx="12" fill="#0f172a" stroke="#38bdf8" stroke-width="3" />
+      <rect x="10" y="-26" width="76" height="46" rx="12" fill="#0f172a" stroke="#34d399" stroke-width="3" />
+      <path d="M -10 -12 Q 0 -22 10 -12" fill="none" stroke="#f8fafc" stroke-width="3.5" stroke-linecap="round" />
+      <text x="-48" y="3" fill="#38bdf8" font-family="monospace" font-weight="bold" font-size="16" text-anchor="middle">L 180°</text>
+      <text x="48" y="3" fill="#34d399" font-family="monospace" font-weight="bold" font-size="16" text-anchor="middle">R 180°</text>
+    </g>
+
+    <!-- Bottom HUD Scrubber Pill inside Dome -->
+    <rect x="-110" y="95" width="220" height="26" rx="13" fill="#0b1324" stroke="#38bdf8" stroke-width="1.2" stroke-opacity="0.6" />
+    <circle cx="-88" cy="108" r="5" fill="#38bdf8" />
+    <line x1="-72" y1="108" x2="62" y2="108" stroke="#1e293b" stroke-width="5" stroke-linecap="round" />
+    <line x1="-72" y1="108" x2="14" y2="108" stroke="url(#accentGrad)" stroke-width="5" stroke-linecap="round" />
+    <circle cx="14" cy="108" r="6" fill="#38bdf8" stroke="#090b10" stroke-width="2" />
+    <text x="84" y="112" fill="#94a3b8" font-family="monospace" font-size="10" text-anchor="middle">3DoF</text>
+  </g>
+
+  <!-- Left Side: Brand Badge, Title, Subtitle & Feature Pills -->
+  <g transform="translate(64, 72)">
+    <!-- Top Pill -->
+    <rect x="0" y="0" width="290" height="30" rx="15" fill="#0f1d36" stroke="#38bdf8" stroke-width="1.2" stroke-opacity="0.5" />
+    <circle cx="18" cy="15" r="5" fill="#34d399" />
+    <text x="32" y="20" fill="#7dd3fc" font-family="Inter, system-ui, sans-serif" font-weight="600" font-size="12" letter-spacing="0.6">XREAL ONE &amp; ONE PRO • PC VR SUITE</text>
+
+    <!-- Main Title -->
+    <text x="0" y="92" fill="#f8fafc" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="56" letter-spacing="-1">
+      vr2xr <tspan fill="url(#accentGrad)">PC Studio</tspan>
+    </text>
+
+    <!-- Subtitle -->
+    <text x="0" y="134" fill="#94a3b8" font-family="Inter, system-ui, sans-serif" font-weight="400" font-size="20">
+      180° / 360° Stereoscopic SBS VR Video Player, 3DoF IMU Bridge &amp; YouTube VR Streamer
+    </text>
+
+    <!-- Feature Badges Row 1 -->
+    <g transform="translate(0, 172)" font-family="JetBrains Mono, monospace" font-size="13" font-weight="600">
+      <rect x="0" y="0" width="166" height="36" rx="10" fill="#111c33" stroke="#38bdf8" stroke-opacity="0.4" />
+      <text x="83" y="23" fill="#38bdf8" text-anchor="middle">Spherical VR180</text>
+
+      <rect x="180" y="0" width="176" height="36" rx="10" fill="#111c33" stroke="#34d399" stroke-opacity="0.4" />
+      <text x="268" y="23" fill="#34d399" text-anchor="middle">1000Hz 3DoF IMU</text>
+
+      <rect x="370" y="0" width="184" height="36" rx="10" fill="#111c33" stroke="#f43f5e" stroke-opacity="0.4" />
+      <text x="462" y="23" fill="#fda4af" text-anchor="middle">YouTube VR Proxy</text>
+
+      <rect x="568" y="0" width="172" height="36" rx="10" fill="#111c33" stroke="#818cf8" stroke-opacity="0.4" />
+      <text x="654" y="23" fill="#a5b4fc" text-anchor="middle">Standalone .EXE</text>
+    </g>
+
+    <!-- Bottom Specs Line -->
+    <text x="0" y="248" fill="#64748b" font-family="JetBrains Mono, monospace" font-size="13">
+      TCP 169.254.2.1:52998 • WebSocket ws://127.0.0.1:8765 • Optical Zoom 0.5×–3.0× • Auto-Hide Fullscreen HUD
+    </text>
+  </g>
+</svg>

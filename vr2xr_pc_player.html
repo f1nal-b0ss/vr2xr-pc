@@ -1,0 +1,2578 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>vr2xr PC — 180° SBS VR Video Player for XREAL One Pro</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: #090b10;
+      color: #f1f5f9;
+      margin: 0;
+      overflow-x: hidden;
+      user-select: none;
+    }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f131d; }
+    ::-webkit-scrollbar-thumb { background: #26304a; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3b4b72; }
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      background: #1e293b;
+      height: 6px;
+      border-radius: 999px;
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #38bdf8;
+      cursor: pointer;
+      border: 2px solid #090b10;
+      box-shadow: 0 0 8px rgba(56, 189, 248, 0.5);
+    }
+    .touchpad-grid {
+      background-image: 
+        linear-gradient(to right, rgba(56, 189, 248, 0.08) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(56, 189, 248, 0.08) 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+    .fullscreen-sbs-active #controlDeckUI {
+      display: none !important;
+    }
+    .fullscreen-sbs-active #viewportContainer,
+    #viewportContainer:fullscreen,
+    #viewportContainer:-webkit-full-screen {
+      position: fixed !important;
+      inset: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      max-width: none !important;
+      max-height: none !important;
+      aspect-ratio: auto !important;
+      z-index: 9999 !important;
+      border-radius: 0 !important;
+      border: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    .fullscreen-sbs-active #sbsDivider,
+    .fullscreen-sbs-active #eyeBadges,
+    #viewportContainer:fullscreen #sbsDivider,
+    #viewportContainer:fullscreen #eyeBadges {
+      display: none !important;
+    }
+    #fullscreenHudOverlay {
+      transition: opacity 0.45s cubic-bezier(0.4, 0, 0.2, 1), transform 0.35s ease;
+    }
+    #fullscreenHudOverlay.hud-hidden {
+      opacity: 0 !important;
+      pointer-events: none !important;
+      transform: translateY(8px);
+    }
+    #fullscreenHudOverlay.hud-visible {
+      opacity: 1 !important;
+      pointer-events: auto !important;
+      transform: translateY(0);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col bg-[#090b10] text-slate-100">
+
+  <!-- Hidden Video & Synchronized DASH Audio Elements for WebGL Texture -->
+  <video id="vrVideo" crossorigin="anonymous" playsinline loop class="hidden"></video>
+  <audio id="vrAudio" crossorigin="anonymous" preload="auto" loop class="hidden"></audio>
+
+  <!-- Top Header Bar -->
+  <header id="topBar" class="border-b border-slate-800/80 bg-[#0d111a]/90 backdrop-blur sticky top-0 z-30 px-4 py-2.5">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+      <!-- Brand & Status -->
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-sky-500/20 font-bold text-white tracking-tighter">
+          XR
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="font-bold text-base tracking-tight text-white">vr2xr <span class="text-sky-400 font-semibold">PC Studio</span></h1>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30 font-medium">XREAL • VITURE • Rokid • RayNeo</span>
+          </div>
+          <p class="text-xs text-slate-400">180° / 360° Stereoscopic Full-SBS VR Video Player &amp; 3DoF IMU Head Tracker</p>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="flex items-center gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
+        <button id="tabPlayerBtn" class="px-3 py-1.5 rounded-lg text-xs font-medium transition bg-sky-500 text-slate-950 font-semibold">
+          VR Player &amp; Deck
+        </button>
+        <button id="tabWizardBtn" class="px-3 py-1.5 rounded-lg text-xs font-medium transition text-slate-300 hover:text-white hover:bg-slate-800/60">
+          Guided Setup Wizard
+        </button>
+        <button id="tabBridgeBtn" class="px-3 py-1.5 rounded-lg text-xs font-medium transition text-slate-300 hover:text-white hover:bg-slate-800/60">
+          PC IMU Bridge &amp; OpenTrack
+        </button>
+      </nav>
+
+      <!-- Live Telemetry Pill & Quick Actions -->
+      <div class="flex items-center gap-2">
+        <div id="imuStatusBadge" class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs">
+          <span id="imuStatusDot" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+          <span id="imuStatusText" class="font-medium text-slate-300">Auto-Searching IMU...</span>
+        </div>
+        <button id="downloadAppBtn" class="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 text-xs font-medium transition flex items-center gap-1.5" title="Save vr2xr_pc_player.html to your PC so you can open it anytime by double-clicking">
+          <span>Download Single-File App (.html)</span>
+        </button>
+        <button id="popoutGlassesBtn" class="px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-medium transition flex items-center gap-1.5" title="Open a dedicated borderless 3840x1080 Full-SBS window to drag onto your XREAL One Pro display">
+          <span>Pop-Out Glasses Display</span>
+        </button>
+        <button id="fullscreenGlassesBtn" class="px-3 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs transition flex items-center gap-1.5" title="Enter Fullscreen 3840x1080 SBS Output on current monitor">
+          <span>Enter Glasses Fullscreen</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Container -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 flex flex-col gap-4">
+
+    <!-- VIEW 1: VR PLAYER & CONTROL DECK -->
+    <section id="viewPlayer" class="flex flex-col gap-4">
+      <!-- Top Grid: Viewport + Right Control Column -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+
+        <!-- Left 8 Cols: 3D Stereoscopic Viewport + Playback Bar -->
+        <div class="lg:col-span-8 flex flex-col gap-3">
+          <!-- WebGL Viewport Container -->
+          <div id="viewportContainer" class="relative w-full aspect-[16/9] bg-black rounded-2xl overflow-hidden border border-slate-800 shadow-2xl group">
+            <canvas id="vrCanvas" class="w-full h-full block"></canvas>
+
+            <!-- Center Divider Line for SBS Mode -->
+            <div id="sbsDivider" class="pointer-events-none absolute inset-y-0 left-1/2 w-[1px] bg-slate-700/40"></div>
+
+            <!-- Eye Badges Overlay -->
+            <div id="eyeBadges" class="pointer-events-none absolute top-3 inset-x-4 flex justify-between items-center text-[11px] font-mono text-slate-400/80 transition-opacity duration-300">
+              <span class="px-2 py-0.5 rounded bg-black/60 backdrop-blur border border-white/10">LEFT EYE • 1920×1080</span>
+              <span id="activeModeChip" class="px-2.5 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30">VR180 SBS • FOV 95°</span>
+              <span class="px-2 py-0.5 rounded bg-black/60 backdrop-blur border border-white/10">RIGHT EYE • 1920×1080</span>
+            </div>
+
+            <!-- Auto-Hiding Fullscreen Progress Bar & HUD (Shows for 3 seconds on interaction, then fades away) -->
+            <div id="fullscreenHudOverlay" class="hud-visible absolute bottom-3 inset-x-4 flex flex-col gap-2 bg-slate-950/85 backdrop-blur-md border border-white/15 rounded-2xl p-3 shadow-2xl">
+              <!-- Top Row of Overlay: Interactive Video Progress Scrubber Bar -->
+              <div class="flex items-center gap-2.5">
+                <button id="fsPlayPauseBtn" class="px-3 py-1 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs transition shrink-0">
+                  Play / Pause
+                </button>
+                <button id="fsSeekBackBtn" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] mono shrink-0" title="Rewind 15s">
+                  -15s
+                </button>
+                <span id="fsCurrentTimeLabel" class="text-xs mono text-sky-300 shrink-0 min-w-[42px] text-right">00:00</span>
+                <input id="fsTimelineSlider" type="range" min="0" max="100" step="0.1" value="0" class="w-full cursor-pointer" title="Drag to seek video" />
+                <span id="fsDurationTimeLabel" class="text-xs mono text-slate-400 shrink-0 min-w-[42px]">01:00</span>
+                <button id="fsSeekFwdBtn" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] mono shrink-0" title="Forward 15s">
+                  +15s
+                </button>
+              </div>
+
+              <!-- Bottom Row of Overlay: Pose Telemetry & Quick Optical / Fullscreen Actions -->
+              <div class="flex flex-wrap justify-between items-center gap-2 pt-1 border-t border-white/10">
+                <div class="px-2.5 py-1 rounded-lg bg-black/60 border border-white/10 text-[11px] mono text-slate-200">
+                  Yaw: <span id="hudYaw" class="text-sky-400">0.0°</span> |
+                  Pitch: <span id="hudPitch" class="text-emerald-400">0.0°</span> |
+                  Roll: <span id="hudRoll" class="text-purple-400">0.0°</span> |
+                  Zoom: <span id="hudZoom" class="text-amber-300">1.00×</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <button id="hudZoomOutBtn" class="px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-white/15 font-mono font-semibold text-xs shadow" title="Zoom Out (- or Scroll Down)">
+                    −
+                  </button>
+                  <button id="hudZoomResetBtn" class="px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-amber-300 border border-white/15 font-mono font-semibold text-xs shadow" title="Reset Zoom to 1.0x (0)">
+                    1.0×
+                  </button>
+                  <button id="hudZoomInBtn" class="px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-white/15 font-mono font-semibold text-xs shadow" title="Zoom In (+ or Scroll Up)">
+                    +
+                  </button>
+                  <button id="hudZeroViewBtn" class="px-3 py-1 rounded-lg bg-sky-500/90 hover:bg-sky-400 text-slate-950 font-semibold text-xs shadow">
+                    Zero View (Z / Space)
+                  </button>
+                  <button id="hudExitFsBtn" class="hidden px-3 py-1 rounded-lg bg-rose-500/90 hover:bg-rose-400 text-white font-semibold text-xs shadow">
+                    Exit Fullscreen (Esc)
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Media Transport & Source Loader Card -->
+          <div id="controlDeckUI" class="bg-[#0e131f] border border-slate-800/90 rounded-2xl p-4 flex flex-col gap-3.5 shadow-lg">
+            <!-- Timeline Scrubber -->
+            <div class="flex flex-col gap-1.5">
+              <div class="flex justify-between items-center text-xs mono text-slate-400">
+                <span id="currentTimeLabel">00:00</span>
+                <span id="mediaTitleLabel" class="text-slate-200 font-sans font-medium truncate max-w-md">Built-in 3D Calibration Test Scene (Procedural VR180 Stereo Dome)</span>
+                <span id="durationTimeLabel">00:00</span>
+              </div>
+              <input id="timelineSlider" type="range" min="0" max="100" step="0.1" value="0" class="w-full" />
+            </div>
+
+            <!-- Transport Buttons Row -->
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div class="flex items-center gap-2">
+                <button id="playPauseBtn" class="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs transition flex items-center gap-1.5">
+                  <span id="playPauseText">Play Demo Video</span>
+                </button>
+                <button id="seekBack15Btn" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition" title="Rewind 15 seconds (Left Arrow)">
+                  -15s
+                </button>
+                <button id="seekFwd15Btn" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition" title="Forward 15 seconds (Right Arrow)">
+                  +15s
+                </button>
+                <button id="loopToggleBtn" class="px-3 py-2 rounded-xl bg-sky-500/15 text-sky-300 border border-sky-500/30 text-xs font-medium transition">
+                  Loop: ON
+                </button>
+              </div>
+
+              <!-- Volume & Playback Speed -->
+              <div class="flex items-center gap-3">
+                <div class="flex items-center gap-2">
+                  <button id="muteBtn" class="text-xs text-slate-400 hover:text-white font-medium">Vol</button>
+                  <input id="volumeSlider" type="range" min="0" max="1" step="0.05" value="0.8" class="w-20" />
+                </div>
+                <select id="speedSelect" class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 outline-none">
+                  <option value="0.5">0.5× Speed</option>
+                  <option value="0.75">0.75× Speed</option>
+                  <option value="1" selected>1.0× Speed</option>
+                  <option value="1.25">1.25× Speed</option>
+                  <option value="1.5">1.5× Speed</option>
+                  <option value="2">2.0× Speed</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Source Input Bar: Local File, YouTube / Stream URL, and Built-In VR180 Generator -->
+            <div class="pt-2 border-t border-slate-800/80 grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center">
+              <div class="md:col-span-4 flex items-center gap-2">
+                <label for="localFileInput" class="w-full cursor-pointer px-3 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-center text-slate-200 transition truncate">
+                  Open Local SBS Video (.mp4 / .mkv / .webm)
+                </label>
+                <input id="localFileInput" type="file" accept="video/*" class="hidden" />
+              </div>
+              <div class="md:col-span-6 flex items-center gap-1.5">
+                <input id="streamUrlInput" type="url" value="" placeholder="Paste YouTube VR link or http(s):// video URL..." class="w-full bg-slate-900 border border-slate-800 focus:border-sky-500 rounded-xl px-3 py-2 text-xs text-slate-200 outline-none" />
+                <button id="loadUrlBtn" class="px-3 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-xs font-semibold text-rose-300 border border-rose-500/30 shrink-0" title="Load YouTube VR video (via local xreal_imu_bridge.py proxy) or direct MP4 URL">
+                  Load
+                </button>
+              </div>
+              <div class="md:col-span-2">
+                <button id="loadTestSceneBtn" class="w-full px-2.5 py-2 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 text-xs font-medium transition">
+                  3D Test Grid
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right 4 Cols: vr2xr Controls (Touchpad, IMU Tracking, Projection FOV) -->
+        <div class="lg:col-span-4 flex flex-col gap-3.5">
+
+          <!-- Card 1: Touchpad View Adjustment (with Continuous Edge Auto-Drag & Reversed Y-Axis) -->
+          <div class="bg-[#0e131f] border border-slate-800/90 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
+            <div class="flex items-center justify-between">
+              <div>
+                <h2 class="text-sm font-semibold text-white">Touchpad View &amp; Recenter</h2>
+                <p class="text-[11px] text-slate-400">Drag to look around • Vertical axis reversed</p>
+              </div>
+              <button id="zeroViewBtn" class="px-3 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs transition shadow shadow-sky-500/20">
+                Zero View (Z)
+              </button>
+            </div>
+
+            <!-- Interactive 2D Touchpad -->
+            <div id="touchpadArea" class="relative w-full h-36 rounded-xl bg-slate-950 border border-slate-800 touchpad-grid overflow-hidden cursor-grab active:cursor-grabbing flex items-center justify-center">
+              <!-- Edge Auto-Drag Zone Ring -->
+              <div class="pointer-events-none absolute inset-3 border border-dashed border-sky-500/20 rounded-lg"></div>
+              <!-- Crosshair -->
+              <div class="pointer-events-none w-6 h-6 relative flex items-center justify-center">
+                <div class="absolute w-full h-[1px] bg-slate-700"></div>
+                <div class="absolute h-full w-[1px] bg-slate-700"></div>
+              </div>
+              <!-- Reticle Puck -->
+              <div id="touchpadPuck" class="pointer-events-none w-5 h-5 rounded-full bg-sky-400/90 border-2 border-white shadow-lg shadow-sky-500/50 transition-transform duration-75" style="transform: translate(0px, 0px);"></div>
+              <span id="edgeDragIndicator" class="hidden pointer-events-none absolute bottom-1.5 right-2 text-[10px] mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">EDGE AUTO-DRAG</span>
+            </div>
+
+            <!-- Mouse Vertical Axis Toggle & Free-Look Air-Mouse Toggle -->
+            <div class="flex items-center justify-between text-xs text-slate-300 px-0.5">
+              <label class="flex items-center gap-1.5 cursor-pointer" title="Reverses vertical up/down look direction when dragging with mouse">
+                <input id="reverseMouseYChk" type="checkbox" checked class="accent-sky-400" />
+                <span>Reverse Mouse Y-Axis</span>
+              </label>
+              <button id="mouseLookLockBtn" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-medium transition" title="Lock pointer so moving the mouse or Air-Mouse looks around without holding click (Press M or Esc to exit)">
+                Free-Look Mouse (M)
+              </button>
+            </div>
+
+            <!-- Quick Orientation Readout & Reset -->
+            <div class="grid grid-cols-3 gap-2 text-center bg-slate-900/80 p-2 rounded-xl border border-slate-800/80 text-xs mono">
+              <div>
+                <div class="text-[10px] text-slate-400">YAW (L/R)</div>
+                <div id="readoutYaw" class="font-semibold text-sky-400">0.0°</div>
+              </div>
+              <div>
+                <div class="text-[10px] text-slate-400">PITCH (U/D)</div>
+                <div id="readoutPitch" class="font-semibold text-emerald-400">0.0°</div>
+              </div>
+              <div>
+                <div class="text-[10px] text-slate-400">ROLL (TILT)</div>
+                <div id="readoutRoll" class="font-semibold text-purple-400">0.0°</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2: XREAL One Pro IMU Head Tracking Controls -->
+          <div class="bg-[#0e131f] border border-slate-800/90 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
+            <div class="flex items-center justify-between">
+              <div>
+                <h2 class="text-sm font-semibold text-white">3DoF Glasses IMU Tracking</h2>
+                <p class="text-[11px] text-slate-400">XREAL One/Air • VITURE (`0x35CA`) • Rokid • OpenTrack</p>
+              </div>
+              <button id="toggleImuBtn" class="px-3 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-semibold transition">
+                IMU: ENABLED
+              </button>
+            </div>
+
+            <!-- Bridge WebSocket & Direct USB WebHID Row -->
+            <div class="flex items-center gap-1.5">
+              <input id="wsEndpointInput" type="text" value="ws://127.0.0.1:8765" class="flex-1 min-w-0 bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs mono text-slate-300 outline-none" title="Local WebSocket bridge URL for xreal_imu_bridge.py" />
+              <button id="connectWsBtn" class="px-2.5 py-1.5 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/30 text-xs font-medium transition shrink-0">
+                Connect Bridge
+              </button>
+              <button id="connectWebHidBtn" class="px-2.5 py-1.5 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 text-xs font-medium transition shrink-0" title="Try direct browser WebHID connection if supported by your XREAL firmware">
+                USB WebHID
+              </button>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+              <button id="calibrateImuBtn" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 transition">
+                Calibrate Flat Bias (R)
+              </button>
+              <button id="poseModeBtn" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-sky-300 border border-slate-700 transition">
+                Mode: Smooth IMU
+              </button>
+            </div>
+
+            <!-- Sensitivity & Smoothing Sliders -->
+            <div class="flex flex-col gap-2.5 pt-1">
+              <div>
+                <div class="flex justify-between text-xs mb-1">
+                  <span class="text-slate-300">IMU Tracking Sensitivity</span>
+                  <span id="imuSensValue" class="mono text-sky-400">1.00×</span>
+                </div>
+                <input id="imuSensSlider" type="range" min="0.2" max="2.5" step="0.05" value="1.0" class="w-full" />
+              </div>
+
+              <div>
+                <div class="flex justify-between text-xs mb-1">
+                  <span class="text-slate-300">SmoothIMU EMA Damping</span>
+                  <span id="imuSmoothValue" class="mono text-sky-400">65%</span>
+                </div>
+                <input id="imuSmoothSlider" type="range" min="0" max="95" step="5" value="65" class="w-full" />
+              </div>
+
+              <!-- Axis Invert Toggles -->
+              <div class="flex items-center justify-between pt-1 text-xs text-slate-300">
+                <span>Invert IMU Axes:</span>
+                <div class="flex items-center gap-2">
+                  <label class="flex items-center gap-1 cursor-pointer">
+                    <input id="invertYawChk" type="checkbox" class="accent-sky-400" />
+                    <span>Yaw</span>
+                  </label>
+                  <label class="flex items-center gap-1 cursor-pointer">
+                    <input id="invertPitchChk" type="checkbox" class="accent-sky-400" />
+                    <span>Pitch</span>
+                  </label>
+                  <label class="flex items-center gap-1 cursor-pointer">
+                    <input id="lockRollChk" type="checkbox" checked class="accent-sky-400" />
+                    <span>Horizon Lock</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 3: Runtime Projection & FOV Settings (with Persistence) -->
+          <div class="bg-[#0e131f] border border-slate-800/90 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
+            <div class="flex items-center justify-between">
+              <div>
+                <h2 class="text-sm font-semibold text-white">Runtime Projection &amp; FOV</h2>
+                <p class="text-[11px] text-slate-400">Persisted automatically • Matches XREAL One Pro 57° optic</p>
+              </div>
+              <button id="resetProjBtn" class="text-[11px] text-slate-400 hover:text-sky-400 underline">Reset</button>
+            </div>
+
+            <!-- Projection Format Selector (100% Spherical Mesh Projections) -->
+            <div class="grid grid-cols-4 gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 text-[11px]">
+              <button data-proj="vr180" class="proj-mode-btn py-1.5 rounded-lg font-semibold bg-sky-500 text-slate-950 transition" title="Standard VR180 Equirectangular Spherical Hemisphere">
+                VR180 SBS
+              </button>
+              <button data-proj="fisheye180" class="proj-mode-btn py-1.5 rounded-lg font-medium text-slate-300 hover:text-white transition" title="VR180 Equidistant Fisheye Hemisphere (for dual-fisheye VR180 videos)">
+                VR180 Fisheye
+              </button>
+              <button data-proj="vr360" class="proj-mode-btn py-1.5 rounded-lg font-medium text-slate-300 hover:text-white transition" title="Full 360° Spherical Projection">
+                VR360 SBS
+              </button>
+              <button data-proj="flat3d" class="proj-mode-btn py-1.5 rounded-lg font-medium text-slate-300 hover:text-white transition" title="Spherical 110° Cinema Dome">
+                Cinema 3D
+              </button>
+            </div>
+
+            <!-- Zoom Level Slider & Quick Buttons -->
+            <div class="bg-slate-900/70 border border-slate-800/80 rounded-xl p-2.5 flex flex-col gap-2">
+              <div class="flex items-center justify-between text-xs">
+                <span class="text-slate-200 font-medium">Optical Zoom <span class="text-[10px] text-slate-400">(Wheel / + / −)</span></span>
+                <div class="flex items-center gap-1">
+                  <button id="zoomOutBtn" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 mono font-bold text-xs border border-slate-700" title="Zoom Out (-)">−</button>
+                  <span id="zoomValueLabel" class="mono text-amber-300 font-semibold px-1.5 min-w-[44px] text-center">1.00×</span>
+                  <button id="zoomInBtn" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 mono font-bold text-xs border border-slate-700" title="Zoom In (+)">+</button>
+                  <button id="zoomResetBtn" class="ml-1 px-2 py-0.5 rounded bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 text-[11px] font-medium" title="Reset Zoom (0)">1× Reset</button>
+                </div>
+              </div>
+              <input id="zoomSlider" type="range" min="0.5" max="3.0" step="0.05" value="1.0" class="w-full" />
+            </div>
+
+            <!-- FOV Slider -->
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-slate-300">Projection Camera FOV</span>
+                <span id="fovValueLabel" class="mono text-sky-400">95°</span>
+              </div>
+              <input id="fovSlider" type="range" min="50" max="135" step="1" value="95" class="w-full" />
+            </div>
+
+            <!-- IPD / Stereo Convergence Offset -->
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-slate-300">Stereo IPD / Horizontal Offset</span>
+                <span id="ipdValueLabel" class="mono text-sky-400">0.0 px</span>
+              </div>
+              <input id="ipdSlider" type="range" min="-60" max="60" step="1" value="0" class="w-full" />
+            </div>
+
+            <!-- Output Render Mode: Full-SBS (3840x1080) vs Half-SBS (1920x1080) vs Mono -->
+            <div class="flex flex-col gap-2 pt-2 border-t border-slate-800/80 text-xs">
+              <div class="flex items-center justify-between">
+                <span class="text-slate-300">Stereo Output Format:</span>
+                <button id="swapEyesBtn" class="px-2 py-0.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white font-medium text-[11px] border border-slate-700" title="Swap Left and Right eye channels if depth is inverted">
+                  Swap L/R
+                </button>
+              </div>
+              <div class="grid grid-cols-3 gap-1.5">
+                <button id="renderSbsBtn" class="py-1.5 px-2 rounded-lg bg-sky-500/20 text-sky-300 border border-sky-500/30 font-medium text-[11px]" title="For XREAL One Pro in 3840x1080 Full-SBS 3D Mode">
+                  Full SBS (3840×1080)
+                </button>
+                <button id="renderHalfSbsBtn" class="py-1.5 px-2 rounded-lg bg-slate-800 text-slate-400 hover:text-white font-medium text-[11px]" title="Anamorphic Half-SBS for 1920x1080 16:9 displays">
+                  Half SBS (16:9)
+                </button>
+                <button id="renderMonoBtn" class="py-1.5 px-2 rounded-lg bg-slate-800 text-slate-400 hover:text-white font-medium text-[11px]" title="Single-eye 2D preview">
+                  Mono Preview
+                </button>
+              </div>
+              <!-- Crucial XREAL One Pro 3D Merger Callout -->
+              <div class="mt-1 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-200/90 leading-relaxed">
+                <div class="font-semibold text-amber-300 flex items-center justify-between">
+                  <span>Internal Tracking &amp; YouTube VR Proxy:</span>
+                  <span id="detectedResBadge" class="mono text-[10px] px-1.5 py-0.5 rounded bg-black/40 text-sky-300">Res: Auto</span>
+                </div>
+                <div class="mt-1 text-slate-300 space-y-1">
+                  <div>1. Set your XREAL One Pro glasses OSD to <strong>Follow Mode</strong> (not Anchor) so raw IMU telemetry streams on <code class="text-sky-300">169.254.2.1:52998</code>.</div>
+                  <div>2. Keep <code class="text-emerald-300">xreal_imu_bridge.py</code> or <code class="text-emerald-300">vr2xr_PC_Studio.exe</code> running — it powers both <strong>3DoF Head Tracking</strong> and <strong>YouTube VR180 streaming</strong>!</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 2: GUIDED SETUP WIZARD (2-Step vr2xr Flow) -->
+    <section id="viewWizard" class="hidden flex-col gap-4">
+      <div class="bg-[#0e131f] border border-slate-800 rounded-2xl p-6 max-w-4xl mx-auto w-full flex flex-col gap-6 shadow-xl">
+        <div class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
+          <div>
+            <span class="text-xs font-semibold uppercase tracking-wider text-sky-400">vr2xr Guided Onboarding</span>
+            <h2 class="text-xl font-bold text-white mt-0.5">XREAL One Pro Setup &amp; Calibration Wizard</h2>
+            <p class="text-xs text-slate-400 mt-1">Follow these 3 quick steps to configure your XREAL One Pro glasses for distortion-free 180° SBS VR playback on PC.</p>
+          </div>
+          <button id="wizardFinishToPlayerBtn" class="px-4 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs transition shadow-lg shadow-sky-500/20">
+            Continue to VR Player &amp; Apply Zero View →
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <!-- Step 1 -->
+          <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between gap-4">
+            <div class="flex flex-col gap-2">
+              <div class="flex items-center justify-between">
+                <span class="px-2.5 py-0.5 rounded-full bg-sky-500/20 text-sky-300 text-xs font-semibold">Step 1 • Hardware</span>
+                <span class="text-xs mono text-slate-400">Follow Mode</span>
+              </div>
+              <h3 class="font-semibold text-white text-sm mt-1">Place on Flat Surface &amp; Calibrate</h3>
+              <p class="text-xs text-slate-300 leading-relaxed">
+                Connect your XREAL One Pro to a USB-C DP Alt-Mode port (or HDMI/USB-C hub). Open the on-glasses X1 OSD menu and set mode to <strong>Follow Mode (Stabilization Off)</strong> so raw IMU telemetry streams cleanly on <code class="text-sky-300">169.254.2.1:52998</code>.
+              </p>
+              <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-3 text-xs text-slate-300 mt-1">
+                <div class="font-medium text-slate-200 mb-1">Calibration Progress:</div>
+                <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                  <div id="wizardCalibBar" class="h-full bg-emerald-400 transition-all duration-300" style="width: 100%;"></div>
+                </div>
+                <div id="wizardCalibStatus" class="text-[11px] mono text-emerald-400 mt-1.5">Ready — Stationary bias zeroed</div>
+              </div>
+            </div>
+            <button id="wizardRunCalibBtn" class="w-full py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 text-xs font-semibold transition">
+              Run 500-Sample Flat Surface Calibration
+            </button>
+          </div>
+
+          <!-- Step 2 -->
+          <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between gap-4">
+            <div class="flex flex-col gap-2">
+              <div class="flex items-center justify-between">
+                <span class="px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-semibold">Step 2 • 3D Display</span>
+                <span class="text-xs mono text-slate-400">3840×1080</span>
+              </div>
+              <h3 class="font-semibold text-white text-sm mt-1">Switch Glasses to Full SBS Mode</h3>
+              <p class="text-xs text-slate-300 leading-relaxed">
+                Put your XREAL One Pro glasses on. Open the glasses OSD menu and switch <strong>Display &gt; 3D Mode &gt; Full SBS (3840×1080)</strong> (or hold the Mode/+ button for 2 seconds).
+              </p>
+              <ul class="text-xs text-slate-400 space-y-1.5 list-disc pl-4 mt-1">
+                <li>Set Windows/Linux display mode to <strong>Extend these displays</strong> so your PC monitor stays free for controls.</li>
+                <li>Verify that your OS sets the XREAL display resolution to <strong class="text-slate-200">3840 × 1080 @ 60/90/120Hz</strong>.</li>
+              </ul>
+            </div>
+            <button id="wizardOpenPopoutBtn" class="w-full py-2 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold transition">
+              Launch Pop-Out SBS Window for Glasses
+            </button>
+          </div>
+
+          <!-- Step 3 -->
+          <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between gap-4">
+            <div class="flex flex-col gap-2">
+              <div class="flex items-center justify-between">
+                <span class="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-xs font-semibold">Step 3 • Zero View</span>
+                <span class="text-xs mono text-slate-400">Hotkey: Z</span>
+              </div>
+              <h3 class="font-semibold text-white text-sm mt-1">Face Forward &amp; Lock Zero View</h3>
+              <p class="text-xs text-slate-300 leading-relaxed">
+                Look comfortably straight ahead and click <strong>Zero View</strong> (or press <kbd class="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 mono">Z</kbd>). Use your PC mouse on the Touchpad deck or live IMU head tracking to explore the 180° hemisphere.
+              </p>
+              <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-3 text-xs text-slate-400 mt-1">
+                <div><strong class="text-slate-200">Keyboard Shortcuts:</strong></div>
+                <div class="mt-1 mono text-[11px] space-y-0.5">
+                  <div>[Z] Zero View • [R] Recalibrate • [M] Free-Look</div>
+                  <div>[Space] Play/Pause • [F] Fullscreen</div>
+                  <div>[+/− or Wheel] Zoom • [0] Reset Zoom</div>
+                  <div>[←/→] Seek ±15s • [↑/↓] FOV ±2°</div>
+                </div>
+              </div>
+            </div>
+            <button id="wizardZeroNowBtn" class="w-full py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-semibold transition">
+              Apply Zero View &amp; Start Watching
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 3: PC IMU BRIDGE & OPENTRACK SETUP -->
+    <section id="viewBridge" class="hidden flex-col gap-4">
+      <div class="bg-[#0e131f] border border-slate-800 rounded-2xl p-6 max-w-4xl mx-auto w-full flex flex-col gap-5 shadow-xl">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
+          <div>
+            <span class="text-xs font-semibold uppercase tracking-wider text-emerald-400">Standalone EXE &amp; USB-C Telemetry</span>
+            <h2 class="text-xl font-bold text-white mt-0.5">Standalone .EXE Compiler, IMU Bridge &amp; YouTube VR Proxy</h2>
+            <p class="text-xs text-slate-400 mt-1">Run <code class="text-emerald-300">Build_Standalone_EXE.bat</code> to compile everything into a single <code class="text-sky-300">vr2xr_PC_Studio.exe</code> file, or run <code class="text-emerald-300">xreal_imu_bridge.py</code> directly.</p>
+          </div>
+          <button id="simulateImuToggleBtn" class="px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-xs font-semibold transition">
+            Toggle Live IMU Demo Motion: OFF
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+          <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4 flex flex-col gap-2.5">
+            <h3 class="text-sm font-semibold text-white">1. Build a Single Standalone .EXE (or Run via Python)</h3>
+            <p class="text-slate-300 leading-relaxed">
+              Double-click <code class="text-emerald-300">Build_Standalone_EXE.bat</code> in the extracted folder to bundle <code class="text-sky-300">vr2xr_pc_player.html</code>, the XREAL One Pro IMU bridge, and the <code class="text-sky-300">yt-dlp</code> YouTube VR stream proxy into a single standalone <code class="text-emerald-300">vr2xr_PC_Studio.exe</code> executable!
+            </p>
+            <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 mono text-[11px] text-slate-200 select-all">
+              pip install pyinstaller websockets yt-dlp<br/>
+              Build_Standalone_EXE.bat
+            </div>
+            <p class="text-slate-400 text-[11px]">
+              Don't have your glasses plugged in right now? Run <code class="text-slate-200">python xreal_imu_bridge.py --simulate</code> or use the Touchpad &amp; Demo Motion toggle above.
+            </p>
+          </div>
+
+          <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4 flex flex-col gap-2.5">
+            <h3 class="text-sm font-semibold text-white">2. Playing YouTube VR180 / 3D Videos &amp; OpenTrack</h3>
+            <p class="text-slate-300 leading-relaxed">
+              When <code class="text-emerald-300">xreal_imu_bridge.py</code> (or <code class="text-emerald-300">vr2xr_PC_Studio.exe</code>) is running, it hosts a local YouTube VR proxy on <code class="text-sky-300">http://127.0.0.1:8766</code>. Paste any YouTube VR link into the player bar and click <strong>Load</strong>!
+            </p>
+            <p class="text-slate-300 leading-relaxed">
+              Using <strong>OpenTrack</strong>? Set OpenTrack's Output to <strong>UDP over network (port 4242)</strong> and run:
+            </p>
+            <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 mono text-[11px] text-slate-200 select-all">
+              python xreal_imu_bridge.py --opentrack-udp 4242
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Toast Notification -->
+  <div id="toastBox" class="fixed bottom-4 right-4 z-50 hidden px-4 py-2.5 rounded-xl bg-slate-900/95 border border-sky-500/40 text-xs font-medium text-sky-200 shadow-2xl backdrop-blur">
+    Notification
+  </div>
+
+  <script>
+    (function() {
+      // --- STATE WITH LOCALSTORAGE PERSISTENCE ---
+      const defaultState = {
+        projMode: 'vr180',       // 'vr180' | 'fisheye180' | 'vr360' | 'flat3d'
+        fov: 95,                 // 50..135 degrees
+        zoom: 1.0,               // 0.5..3.0x optical camera zoom
+        ipdOffsetPx: 0,          // -60..60 pixels horizontal convergence shift
+        renderMode: 'sbs',       // 'sbs' | 'halfsbs' | 'mono'
+        swapEyes: false,
+        imuEnabled: true,
+        poseMode: 'smooth',      // 'smooth' | 'raw'
+        imuSensitivity: 1.0,
+        imuSmoothing: 0.65,      // 0..0.95 EMA factor
+        invertYaw: false,
+        invertPitch: false,
+        lockRoll: true,
+        reverseMouseY: true,     // Reversed vertical mouse look axis (Up/Down)
+        loopVideo: true,
+        wsUrl: 'ws://127.0.0.1:8765'
+      };
+
+      let state = Object.assign({}, defaultState);
+      try {
+        const saved = localStorage.getItem('vr2xr_pc_settings_v2');
+        if (saved) {
+          state = Object.assign({}, defaultState, JSON.parse(saved));
+        }
+      } catch (e) {
+        // Ignore storage errors in sandboxed iframes
+      }
+
+      function saveState() {
+        try {
+          localStorage.setItem('vr2xr_pc_settings_v2', JSON.stringify(state));
+        } catch (e) {}
+      }
+
+      // --- TOAST HELPER ---
+      let toastTimer = null;
+      function showToast(msg) {
+        const box = document.getElementById('toastBox');
+        if (!box) return;
+        // Strip any stray ANSI color codes if present
+        box.textContent = String(msg || '').replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+        box.classList.remove('hidden');
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => box.classList.add('hidden'), 3500);
+      }
+
+      // --- 3-SECOND AUTO-HIDING FULLSCREEN PROGRESS BAR & HUD CONTROLLER ---
+      const fullscreenHudOverlay = document.getElementById('fullscreenHudOverlay');
+      const viewportContainerEl = document.getElementById('viewportContainer');
+      let hudFadeTimeout = null;
+      let isScrubbingTimeline = false;
+
+      function triggerFullscreenHudActivity() {
+        if (!fullscreenHudOverlay) return;
+        fullscreenHudOverlay.classList.remove('hud-hidden');
+        fullscreenHudOverlay.classList.add('hud-visible');
+        if (viewportContainerEl) {
+          viewportContainerEl.style.cursor = '';
+        }
+        if (hudFadeTimeout) clearTimeout(hudFadeTimeout);
+        hudFadeTimeout = setTimeout(() => {
+          if (isScrubbingTimeline) {
+            triggerFullscreenHudActivity();
+            return;
+          }
+          fullscreenHudOverlay.classList.remove('hud-visible');
+          fullscreenHudOverlay.classList.add('hud-hidden');
+          if (viewportContainerEl && (document.fullscreenElement || inCssFullscreen)) {
+            viewportContainerEl.style.cursor = 'none';
+          }
+        }, 3000);
+      }
+
+      if (viewportContainerEl) {
+        ['pointermove', 'pointerdown', 'wheel', 'click', 'touchstart'].forEach((evtName) => {
+          viewportContainerEl.addEventListener(evtName, triggerFullscreenHudActivity, { passive: true });
+        });
+      }
+
+      // --- ORIENTATION & TRACKING STATE ---
+      const rawImuPose = { yaw: 0, pitch: 0, roll: 0 };
+      const imuZeroOffset = { yaw: 0, pitch: 0, roll: 0 };
+      const imuBias = { yaw: 0, pitch: 0, roll: 0 };
+      const smoothedImu = { yaw: 0, pitch: 0, roll: 0 };
+      const manualOffset = { yaw: 0, pitch: 0 };
+      const finalPose = { yaw: 0, pitch: 0, roll: 0 };
+
+      let demoImuMotion = false;
+      let wsConnection = null;
+      let wsConnected = false;
+      let wsManualDisconnect = false;
+      let webHidConnected = false;
+      let webHidDevice = null;
+      let usingProceduralScene = true;
+      let hasSeparateDashAudio = false;
+      let popoutWindow = null;
+      let popoutCtx = null;
+
+      // --- THREE.JS STEREO VR180/360 RENDERER ---
+      const canvas = document.getElementById('vrCanvas');
+      const renderer = new THREE.WebGLRenderer({
+        canvas: canvas,
+        antialias: true,
+        preserveDrawingBuffer: true
+      });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.autoClear = false;
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x05070b);
+
+      const cameraLeft = new THREE.PerspectiveCamera(state.fov, 16 / 9, 0.1, 1000);
+      const cameraRight = new THREE.PerspectiveCamera(state.fov, 16 / 9, 0.1, 1000);
+      const cameraRig = new THREE.Group();
+      cameraRig.rotation.order = 'YXZ';
+      cameraRig.add(cameraLeft);
+      cameraRig.add(cameraRight);
+      scene.add(cameraRig);
+
+      cameraLeft.layers.enable(1);
+      cameraLeft.layers.disable(2);
+      cameraRight.layers.enable(2);
+      cameraRight.layers.disable(1);
+
+      // Procedural Stereoscopic Test Pattern Texture
+      const procCanvas = document.createElement('canvas');
+      procCanvas.width = 2048;
+      procCanvas.height = 1024;
+      const procCtx = procCanvas.getContext('2d');
+
+      function drawProceduralStereoPattern(timeSec) {
+        const w = procCanvas.width;
+        const h = procCanvas.height;
+        const halfW = w / 2;
+
+        procCtx.fillStyle = '#060a12';
+        procCtx.fillRect(0, 0, w, h);
+
+        for (let eye = 0; eye < 2; eye++) {
+          const ox = eye * halfW;
+          const cx = ox + halfW / 2;
+          const cy = h / 2;
+          const fgDisparity = (eye === 0 ? 9 : -9);
+
+          procCtx.save();
+          procCtx.beginPath();
+          procCtx.rect(ox, 0, halfW, h);
+          procCtx.clip();
+
+          const grad = procCtx.createRadialGradient(cx, cy, 30, cx, cy, halfW * 0.72);
+          grad.addColorStop(0, '#13284c');
+          grad.addColorStop(0.5, '#091326');
+          grad.addColorStop(1, '#03060c');
+          procCtx.fillStyle = grad;
+          procCtx.fillRect(ox, 0, halfW, h);
+
+          procCtx.strokeStyle = 'rgba(56, 189, 248, 0.28)';
+          procCtx.lineWidth = 2;
+          for (let deg = 15; deg <= 75; deg += 15) {
+            const rad = (deg / 90) * (halfW * 0.48);
+            procCtx.beginPath();
+            procCtx.arc(cx, cy, rad, 0, Math.PI * 2);
+            procCtx.stroke();
+          }
+
+          for (let a = 0; a < 12; a++) {
+            const ang = (a * Math.PI) / 6;
+            procCtx.beginPath();
+            procCtx.moveTo(cx + Math.cos(ang) * 45, cy + Math.sin(ang) * 45);
+            procCtx.lineTo(cx + Math.cos(ang) * (halfW * 0.48), cy + Math.sin(ang) * (halfW * 0.48));
+            procCtx.stroke();
+          }
+
+          procCtx.strokeStyle = 'rgba(16, 185, 129, 0.55)';
+          procCtx.lineWidth = 3;
+          procCtx.beginPath();
+          procCtx.moveTo(ox, cy);
+          procCtx.lineTo(ox + halfW, cy);
+          procCtx.moveTo(cx, 0);
+          procCtx.lineTo(cx, h);
+          procCtx.stroke();
+
+          const pulse = Math.sin(timeSec * 1.8) * 16;
+          procCtx.strokeStyle = '#38bdf8';
+          procCtx.lineWidth = 4;
+          procCtx.beginPath();
+          procCtx.arc(cx + fgDisparity * 0.6, cy, 155 + pulse, 0, Math.PI * 2);
+          procCtx.stroke();
+
+          procCtx.strokeStyle = '#818cf8';
+          procCtx.lineWidth = 3.5;
+          procCtx.beginPath();
+          procCtx.arc(cx + fgDisparity * 1.25, cy, 95 - pulse * 0.5, 0, Math.PI * 2);
+          procCtx.stroke();
+
+          const orbX = cx + Math.cos(timeSec * 1.2) * 205 + fgDisparity * 1.6;
+          const orbY = cy + Math.sin(timeSec * 1.6) * 115;
+          procCtx.fillStyle = eye === 0 ? '#38bdf8' : '#34d399';
+          procCtx.beginPath();
+          procCtx.arc(orbX, orbY, 20, 0, Math.PI * 2);
+          procCtx.fill();
+
+          procCtx.fillStyle = 'rgba(9, 13, 22, 0.86)';
+          procCtx.fillRect(cx - 175, cy - 54, 350, 108);
+          procCtx.strokeStyle = 'rgba(56, 189, 248, 0.75)';
+          procCtx.lineWidth = 2;
+          procCtx.strokeRect(cx - 175, cy - 54, 350, 108);
+
+          procCtx.fillStyle = '#f8fafc';
+          procCtx.font = 'bold 23px Inter, sans-serif';
+          procCtx.textAlign = 'center';
+          procCtx.fillText('XREAL ONE PRO • VR180 DOME', cx, cy - 16);
+
+          procCtx.fillStyle = '#38bdf8';
+          procCtx.font = '600 16px JetBrains Mono, monospace';
+          procCtx.fillText('SPHERICAL 180° PROJECTION (+)', cx, cy + 14);
+
+          procCtx.fillStyle = '#94a3b8';
+          procCtx.font = '14px Inter, sans-serif';
+          procCtx.fillText('Open a local SBS video or paste a YouTube VR URL below', cx, cy + 40);
+
+          procCtx.fillStyle = eye === 0 ? 'rgba(56, 189, 248, 0.75)' : 'rgba(52, 211, 153, 0.75)';
+          procCtx.font = 'bold 16px JetBrains Mono, monospace';
+          procCtx.fillText(eye === 0 ? 'L' : 'R', cx - 150, cy - 30);
+
+          procCtx.restore();
+        }
+      }
+
+      drawProceduralStereoPattern(0);
+      const procTexture = new THREE.CanvasTexture(procCanvas);
+      procTexture.minFilter = THREE.LinearFilter;
+      procTexture.magFilter = THREE.LinearFilter;
+
+      const videoEl = document.getElementById('vrVideo');
+      const audioEl = document.getElementById('vrAudio');
+      const videoTexture = new THREE.VideoTexture(videoEl);
+      videoTexture.minFilter = THREE.LinearFilter;
+      videoTexture.magFilter = THREE.LinearFilter;
+
+      let leftMesh = null;
+      let rightMesh = null;
+
+      function rebuildProjectionMeshes() {
+        if (leftMesh) {
+          scene.remove(leftMesh);
+          leftMesh.geometry.dispose();
+          leftMesh.material.dispose();
+        }
+        if (rightMesh) {
+          scene.remove(rightMesh);
+          rightMesh.geometry.dispose();
+          rightMesh.material.dispose();
+        }
+
+        const activeTex = usingProceduralScene ? procTexture : videoTexture;
+
+        function createEyeGeometry(isRightEye) {
+          let geom;
+          const radius = 50;
+          const useRightHalf = state.swapEyes ? !isRightEye : isRightEye;
+          const uOffset = useRightHalf ? 0.5 : 0.0;
+
+          if (state.projMode === 'vr180' || state.projMode === 'fisheye180') {
+            geom = new THREE.SphereGeometry(radius, 96, 72, Math.PI, Math.PI, 0, Math.PI);
+            geom.scale(-1, 1, 1);
+          } else if (state.projMode === 'vr360') {
+            geom = new THREE.SphereGeometry(radius, 96, 72, Math.PI * 0.5, Math.PI * 2, 0, Math.PI);
+            geom.scale(-1, 1, 1);
+          } else {
+            const hArc = Math.PI * 0.62;
+            const vArc = Math.PI * 0.42;
+            geom = new THREE.SphereGeometry(
+              radius, 80, 60,
+              Math.PI * 1.5 - hArc * 0.5, hArc,
+              Math.PI * 0.5 - vArc * 0.5, vArc
+            );
+            geom.scale(-1, 1, 1);
+          }
+
+          const uvAttr = geom.attributes.uv;
+          const posAttr = geom.attributes.position;
+
+          for (let i = 0; i < uvAttr.count; i++) {
+            if (state.projMode === 'fisheye180') {
+              const vx = posAttr.getX(i) / radius;
+              const vy = posAttr.getY(i) / radius;
+              const vz = posAttr.getZ(i) / radius;
+              const cosAlpha = Math.max(-1, Math.min(1, -vz));
+              const alpha = Math.acos(cosAlpha);
+              const r = alpha / (Math.PI * 0.5);
+              const theta = Math.atan2(vy, vx);
+              const uLocal = Math.max(0, Math.min(1, 0.5 + 0.49 * r * Math.cos(theta)));
+              const vLocal = Math.max(0, Math.min(1, 0.5 + 0.49 * r * Math.sin(theta)));
+              uvAttr.setXY(i, uLocal * 0.5 + uOffset, vLocal);
+            } else {
+              const u = uvAttr.getX(i);
+              uvAttr.setX(i, u * 0.5 + uOffset);
+            }
+          }
+          uvAttr.needsUpdate = true;
+          return geom;
+        }
+
+        const matLeft = new THREE.MeshBasicMaterial({ map: activeTex, side: THREE.DoubleSide });
+        const matRight = new THREE.MeshBasicMaterial({ map: activeTex, side: THREE.DoubleSide });
+
+        leftMesh = new THREE.Mesh(createEyeGeometry(false), matLeft);
+        leftMesh.layers.set(1);
+
+        rightMesh = new THREE.Mesh(createEyeGeometry(true), matRight);
+        rightMesh.layers.set(2);
+
+        scene.add(leftMesh);
+        scene.add(rightMesh);
+        updateModeBadges();
+      }
+
+      function applyCameraZoomAndFov() {
+        const z = Math.max(0.5, Math.min(3.0, Number(state.zoom) || 1.0));
+        state.zoom = Math.round(z * 100) / 100;
+        cameraLeft.fov = state.fov;
+        cameraRight.fov = state.fov;
+        cameraLeft.zoom = state.zoom;
+        cameraRight.zoom = state.zoom;
+        cameraLeft.updateProjectionMatrix();
+        cameraRight.updateProjectionMatrix();
+      }
+
+      function adjustZoom(delta) {
+        state.zoom = Math.max(0.5, Math.min(3.0, (Number(state.zoom) || 1.0) + delta));
+        applyCameraZoomAndFov();
+        saveState();
+        syncUiFromState();
+      }
+
+      function resetZoom() {
+        state.zoom = 1.0;
+        applyCameraZoomAndFov();
+        saveState();
+        syncUiFromState();
+        showToast('Zoom reset to 1.00×');
+      }
+
+      function updateModeBadges() {
+        const chip = document.getElementById('activeModeChip');
+        const labelMap = {
+          vr180: 'VR180 EQUI SBS',
+          fisheye180: 'VR180 FISHEYE SBS',
+          vr360: 'VR360 SPHERE SBS',
+          flat3d: 'SPHERICAL DOME SBS'
+        };
+        const zoomVal = Number(state.zoom || 1.0).toFixed(2);
+        if (chip) {
+          chip.textContent = `${labelMap[state.projMode] || 'VR180 SBS'} • FOV ${state.fov}° • ${zoomVal}×`;
+        }
+      }
+
+      // --- RESIZE & VIEWPORT HANDLING ---
+      let viewportWidth = 1280;
+      let viewportHeight = 720;
+
+      function resizeRenderer() {
+        const container = document.getElementById('viewportContainer');
+        if (!container) return;
+        const rect = container.getBoundingClientRect();
+        viewportWidth = Math.max(320, Math.floor(rect.width));
+        viewportHeight = Math.max(180, Math.floor(rect.height));
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.setSize(viewportWidth, viewportHeight, false);
+      }
+
+      if (typeof ResizeObserver !== 'undefined') {
+        const ro = new ResizeObserver(() => resizeRenderer());
+        const vc = document.getElementById('viewportContainer');
+        if (vc) ro.observe(vc);
+      }
+
+      window.addEventListener('resize', resizeRenderer);
+
+      // --- CALIBRATION & ZERO VIEW FUNCTIONS ---
+      function applyZeroView() {
+        imuZeroOffset.yaw = rawImuPose.yaw - imuBias.yaw;
+        imuZeroOffset.pitch = rawImuPose.pitch - imuBias.pitch;
+        imuZeroOffset.roll = rawImuPose.roll - imuBias.roll;
+        manualOffset.yaw = 0;
+        manualOffset.pitch = 0;
+        smoothedImu.yaw = 0;
+        smoothedImu.pitch = 0;
+        smoothedImu.roll = 0;
+        if (wsConnection && wsConnected) {
+          try { wsConnection.send(JSON.stringify({ cmd: 'zero_view' })); } catch (e) {}
+        }
+        showToast('Zero View applied — neutral forward orientation locked');
+      }
+
+      function calibrateStationaryBias() {
+        imuBias.yaw = rawImuPose.yaw;
+        imuBias.pitch = rawImuPose.pitch;
+        imuBias.roll = rawImuPose.roll;
+        applyZeroView();
+        const bar = document.getElementById('wizardCalibBar');
+        const st = document.getElementById('wizardCalibStatus');
+        if (bar && st) {
+          bar.style.width = '20%';
+          st.textContent = 'Sampling stationary gyroscope bias (250 samples)...';
+          setTimeout(() => { bar.style.width = '65%'; }, 150);
+          setTimeout(() => {
+            bar.style.width = '100%';
+            st.textContent = 'Calibrated — Stationary drift bias zeroed';
+          }, 350);
+        }
+        if (wsConnection && wsConnected) {
+          try { wsConnection.send(JSON.stringify({ cmd: 'recalibrate' })); } catch (e) {}
+        }
+        showToast('Flat-surface IMU bias calibration completed');
+      }
+
+      // --- TOUCHPAD VIEW ADJUSTMENT + CONTINUOUS EDGE AUTO-DRAG (WITH REVERSED VERTICAL AXIS) ---
+      const touchpadArea = document.getElementById('touchpadArea');
+      const touchpadPuck = document.getElementById('touchpadPuck');
+      const edgeIndicator = document.getElementById('edgeDragIndicator');
+      let padDragging = false;
+      let padLastX = 0;
+      let padLastY = 0;
+      let padEdgeVelX = 0;
+      let padEdgeVelY = 0;
+
+      function getVerticalMouseSign() {
+        return state.reverseMouseY ? 1 : -1;
+      }
+
+      function handlePadPointerMove(clientX, clientY) {
+        if (!padDragging || !touchpadArea) return;
+        const rect = touchpadArea.getBoundingClientRect();
+        const dx = clientX - padLastX;
+        const dy = clientY - padLastY;
+        padLastX = clientX;
+        padLastY = clientY;
+
+        const ySign = getVerticalMouseSign();
+        manualOffset.yaw -= dx * 0.25;
+        manualOffset.pitch = Math.max(-88, Math.min(88, manualOffset.pitch + ySign * dy * 0.25));
+
+        const relX = Math.max(-1, Math.min(1, ((clientX - rect.left) / rect.width - 0.5) * 2));
+        const relY = Math.max(-1, Math.min(1, ((clientY - rect.top) / rect.height - 0.5) * 2));
+
+        const maxPuckX = rect.width * 0.42;
+        const maxPuckY = rect.height * 0.40;
+        if (touchpadPuck) {
+          touchpadPuck.style.transform = `translate(${(relX * maxPuckX).toFixed(1)}px, ${(relY * maxPuckY).toFixed(1)}px)`;
+        }
+
+        const edgeThreshold = 0.75;
+        padEdgeVelX = Math.abs(relX) > edgeThreshold ? Math.sign(relX) * (Math.abs(relX) - edgeThreshold) * 4.5 : 0;
+        padEdgeVelY = Math.abs(relY) > edgeThreshold ? Math.sign(relY) * (Math.abs(relY) - edgeThreshold) * 3.5 : 0;
+
+        if (edgeIndicator) {
+          if (padEdgeVelX !== 0 || padEdgeVelY !== 0) {
+            edgeIndicator.classList.remove('hidden');
+          } else {
+            edgeIndicator.classList.add('hidden');
+          }
+        }
+      }
+
+      function stopPadDrag() {
+        padDragging = false;
+        padEdgeVelX = 0;
+        padEdgeVelY = 0;
+        if (touchpadPuck) touchpadPuck.style.transform = 'translate(0px, 0px)';
+        if (edgeIndicator) edgeIndicator.classList.add('hidden');
+      }
+
+      if (touchpadArea) {
+        touchpadArea.addEventListener('pointerdown', (e) => {
+          padDragging = true;
+          padLastX = e.clientX;
+          padLastY = e.clientY;
+          touchpadArea.setPointerCapture(e.pointerId);
+          handlePadPointerMove(e.clientX, e.clientY);
+        });
+        touchpadArea.addEventListener('pointermove', (e) => {
+          if (padDragging) handlePadPointerMove(e.clientX, e.clientY);
+        });
+        touchpadArea.addEventListener('pointerup', stopPadDrag);
+        touchpadArea.addEventListener('pointercancel', stopPadDrag);
+      }
+
+      let canvasDragging = false;
+      let canvasLastX = 0;
+      let canvasLastY = 0;
+      canvas.addEventListener('pointerdown', (e) => {
+        canvasDragging = true;
+        canvasLastX = e.clientX;
+        canvasLastY = e.clientY;
+        canvas.setPointerCapture(e.pointerId);
+      });
+      canvas.addEventListener('pointermove', (e) => {
+        const ySign = getVerticalMouseSign();
+        if (document.pointerLockElement === canvas) {
+          const dx = e.movementX || 0;
+          const dy = e.movementY || 0;
+          manualOffset.yaw -= dx * 0.18;
+          manualOffset.pitch = Math.max(-88, Math.min(88, manualOffset.pitch + ySign * dy * 0.18));
+          return;
+        }
+        if (!canvasDragging) return;
+        const dx = e.clientX - canvasLastX;
+        const dy = e.clientY - canvasLastY;
+        canvasLastX = e.clientX;
+        canvasLastY = e.clientY;
+        manualOffset.yaw -= dx * 0.22;
+        manualOffset.pitch = Math.max(-88, Math.min(88, manualOffset.pitch + ySign * dy * 0.22));
+      });
+      canvas.addEventListener('pointerup', () => { canvasDragging = false; });
+      canvas.addEventListener('pointercancel', () => { canvasDragging = false; });
+
+      function toggleMouseFreeLookLock() {
+        if (document.pointerLockElement === canvas) {
+          document.exitPointerLock();
+        } else if (canvas.requestPointerLock) {
+          canvas.requestPointerLock();
+          showToast('Free-Look Mouse active — move mouse/head to look around (Press Esc or M to unlock)');
+        }
+      }
+
+      const mouseLookLockBtn = document.getElementById('mouseLookLockBtn');
+      if (mouseLookLockBtn) {
+        mouseLookLockBtn.addEventListener('click', toggleMouseFreeLookLock);
+      }
+
+      function handleWheelZoom(e) {
+        e.preventDefault();
+        triggerFullscreenHudActivity();
+        const step = e.deltaY < 0 ? 0.1 : -0.1;
+        adjustZoom(step);
+      }
+      canvas.addEventListener('wheel', handleWheelZoom, { passive: false });
+      if (touchpadArea) {
+        touchpadArea.addEventListener('wheel', handleWheelZoom, { passive: false });
+      }
+
+      // --- PLAY RESOLVED STREAM HELPER (SUPPORTS COMBINED & SPLIT DASH VIDEO+AUDIO) ---
+      const playPauseBtn = document.getElementById('playPauseBtn');
+      const playPauseText = document.getElementById('playPauseText');
+      const fsPlayPauseBtn = document.getElementById('fsPlayPauseBtn');
+      const timelineSlider = document.getElementById('timelineSlider');
+      const fsTimelineSlider = document.getElementById('fsTimelineSlider');
+      const currentTimeLabel = document.getElementById('currentTimeLabel');
+      const durationTimeLabel = document.getElementById('durationTimeLabel');
+      const fsCurrentTimeLabel = document.getElementById('fsCurrentTimeLabel');
+      const fsDurationTimeLabel = document.getElementById('fsDurationTimeLabel');
+      const mediaTitleLabel = document.getElementById('mediaTitleLabel');
+
+      function startResolvedVideoStream(streamUrl, title, audioUrl) {
+        usingProceduralScene = false;
+        videoEl.crossOrigin = 'anonymous';
+        videoEl.src = streamUrl;
+        videoEl.loop = state.loopVideo;
+
+        if (audioEl) {
+          if (audioUrl) {
+            hasSeparateDashAudio = true;
+            audioEl.crossOrigin = 'anonymous';
+            audioEl.src = audioUrl;
+            audioEl.loop = state.loopVideo;
+            audioEl.volume = videoEl.volume;
+            audioEl.muted = videoEl.muted;
+            audioEl.playbackRate = videoEl.playbackRate;
+          } else {
+            hasSeparateDashAudio = false;
+            audioEl.pause();
+            audioEl.removeAttribute('src');
+          }
+        }
+
+        if (mediaTitleLabel) mediaTitleLabel.textContent = title || streamUrl;
+        rebuildProjectionMeshes();
+        triggerFullscreenHudActivity();
+        videoEl.load();
+        if (hasSeparateDashAudio && audioEl) audioEl.load();
+        videoEl.play().then(() => {
+          if (hasSeparateDashAudio && audioEl) {
+            audioEl.currentTime = videoEl.currentTime || 0;
+            audioEl.play().catch(() => {});
+          }
+          updatePlayPauseLabels(false);
+          showToast(`Playing: ${title || 'VR Video Stream'}`);
+        }).catch((err) => {
+          if (err && err.name === 'NotAllowedError') {
+            videoEl.muted = true;
+            videoEl.play().then(() => {
+              updatePlayPauseLabels(false);
+              showToast(`Playing (click anywhere to unmute): ${title || 'VR Video'}`);
+              const unmuteOnce = () => {
+                videoEl.muted = false;
+                if (hasSeparateDashAudio && audioEl) {
+                  audioEl.muted = false;
+                  audioEl.currentTime = videoEl.currentTime || 0;
+                  audioEl.play().catch(() => {});
+                }
+                window.removeEventListener('pointerdown', unmuteOnce);
+              };
+              window.addEventListener('pointerdown', unmuteOnce, { once: true });
+            }).catch(() => {
+              updatePlayPauseLabels(true);
+              showToast(`Loaded "${title || 'VR Video'}" — press Space or click Play to start!`);
+            });
+          } else {
+            const mediaErr = videoEl.error ? ` (Code ${videoEl.error.code})` : '';
+            showToast(`Stream failed to load${mediaErr} — ensure the latest xreal_imu_bridge.py is running`);
+          }
+        });
+      }
+
+      function isYouTubeUrl(u) {
+        return /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)/i.test(u || '');
+      }
+
+      // --- INTERNAL GLASSES HEAD TRACKING: AUTO-RECONNECT WEBSOCKET BRIDGE + WEBHID + GAMEPAD ---
+      function updateImuStatusUI() {
+        const dot = document.getElementById('imuStatusDot');
+        const txt = document.getElementById('imuStatusText');
+        const btn = document.getElementById('connectWsBtn');
+        if (!dot || !txt) return;
+
+        if (wsConnected) {
+          dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+          txt.textContent = 'XREAL One Pro IMU Live (Bridge)';
+          if (btn) btn.textContent = 'Disconnect';
+        } else if (webHidConnected) {
+          dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+          txt.textContent = 'XREAL USB WebHID Live';
+          if (btn) btn.textContent = 'Connect Bridge';
+        } else if (demoImuMotion) {
+          dot.className = 'w-2 h-2 rounded-full bg-sky-400 animate-pulse';
+          txt.textContent = 'Simulated IMU Stream';
+          if (btn) btn.textContent = 'Connect Bridge';
+        } else {
+          dot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
+          txt.textContent = 'Auto-Listening (ws://127.0.0.1:8765)';
+          if (btn) btn.textContent = 'Connect Bridge';
+        }
+      }
+
+      function connectImuBridge(isSilentAuto = false) {
+        if (!isSilentAuto && wsConnection && wsConnected) {
+          wsManualDisconnect = true;
+          wsConnection.close();
+          wsConnected = false;
+          updateImuStatusUI();
+          return;
+        }
+        if (wsConnected) return;
+        if (!isSilentAuto) wsManualDisconnect = false;
+        if (isSilentAuto && wsManualDisconnect) return;
+
+        const urlInput = document.getElementById('wsEndpointInput');
+        const url = urlInput ? urlInput.value.trim() : state.wsUrl;
+        state.wsUrl = url;
+        if (!isSilentAuto) saveState();
+
+        try {
+          if (wsConnection) {
+            try { wsConnection.close(); } catch (e) {}
+          }
+          wsConnection = new WebSocket(url);
+          if (!isSilentAuto) {
+            showToast(`Connecting to XREAL IMU bridge at ${url}...`);
+          }
+
+          wsConnection.onopen = () => {
+            wsConnected = true;
+            demoImuMotion = false;
+            updateImuStatusUI();
+            showToast('Connected to XREAL One Pro Internal IMU Bridge!');
+          };
+
+          wsConnection.onmessage = (event) => {
+            try {
+              const data = JSON.parse(event.data);
+              if (data.type === 'youtube_progress') {
+                if (data.message) {
+                  showToast(data.message);
+                  if (mediaTitleLabel) mediaTitleLabel.textContent = data.message;
+                }
+                return;
+              }
+              if (data.type === 'youtube_resolved') {
+                if (data.ok && data.stream_url) {
+                  startResolvedVideoStream(
+                    data.stream_url,
+                    data.title ? `YouTube VR: ${data.title}` : 'YouTube VR Stream',
+                    data.audio_url || null
+                  );
+                } else {
+                  showToast(`YouTube Error: ${data.error || 'Could not extract stream'}`);
+                }
+                return;
+              }
+              if (typeof data.yaw === 'number') rawImuPose.yaw = data.yaw;
+              if (typeof data.pitch === 'number') rawImuPose.pitch = data.pitch;
+              if (typeof data.roll === 'number') rawImuPose.roll = data.roll;
+            } catch (err) {}
+          };
+
+          wsConnection.onerror = () => {
+            wsConnected = false;
+            updateImuStatusUI();
+            if (!isSilentAuto) {
+              showToast('Bridge not detected yet — run xreal_imu_bridge.py (auto-retrying in background)');
+            }
+          };
+
+          wsConnection.onclose = () => {
+            wsConnected = false;
+            updateImuStatusUI();
+          };
+        } catch (e) {
+          if (!isSilentAuto) showToast('Invalid WebSocket URL');
+        }
+      }
+
+      setInterval(() => {
+        if (!wsConnected && !wsManualDisconnect && !webHidConnected) {
+          connectImuBridge(true);
+        }
+      }, 2500);
+
+      // Direct Browser WebHID Connection for VITURE (0x35CA), XREAL Air (0x3318), Rokid (0x04D2), and RayNeo (0x1BBB)
+      let lastHidTime = null;
+
+      function vitureCrc16CcittFalse(bytes, startOffset) {
+        let crc = 0xFFFF;
+        for (let i = startOffset; i < bytes.length; i++) {
+          crc ^= (bytes[i] << 8);
+          for (let b = 0; b < 8; b++) {
+            if (crc & 0x8000) {
+              crc = ((crc << 1) ^ 0x1021) & 0xFFFF;
+            } else {
+              crc = (crc << 1) & 0xFFFF;
+            }
+          }
+        }
+        return crc & 0xFFFF;
+      }
+
+      function buildVitureEnableImuPacket(enable, counter) {
+        // VITURE MCU Command Packet:
+        // [0..1] 0xFF 0xFE | [2..3] CRC16 BE | [4..5] Len LE (12) | [6..13] Reserved 0 | [14..15] CmdID LE (0x0015) | [16..17] Counter LE | [18] Payload (1/0) | [19] EndMarker 0x03
+        const pkt = new Uint8Array(20);
+        pkt[0] = 0xFF;
+        pkt[1] = 0xFE;
+        const len = 12; // 20 - 8
+        pkt[4] = len & 0xFF;
+        pkt[5] = (len >> 8) & 0xFF;
+        const cmd = 0x0015;
+        pkt[14] = cmd & 0xFF;
+        pkt[15] = (cmd >> 8) & 0xFF;
+        pkt[16] = counter & 0xFF;
+        pkt[17] = (counter >> 8) & 0xFF;
+        pkt[18] = enable ? 0x01 : 0x00;
+        pkt[19] = 0x03;
+        const crc = vitureCrc16CcittFalse(pkt, 4);
+        pkt[2] = (crc >> 8) & 0xFF;
+        pkt[3] = crc & 0xFF;
+        return pkt;
+      }
+
+      async function connectDirectWebHid() {
+        if (!('hid' in navigator)) {
+          showToast('WebHID is only supported in Chrome / Edge — use Python IMU Bridge instead');
+          return;
+        }
+        try {
+          const devices = await navigator.hid.requestDevice({
+            filters: [
+              { vendorId: 0x35CA }, // VITURE One / Lite / Pro / Luma / Beast
+              { vendorId: 0x3318 }, // XREAL Air / Air 2 / Air 2 Pro / Ultra
+              { vendorId: 0x0486 }, // STMicroelectronics IMU interface
+              { vendorId: 0x04D2 }, // Rokid Air / Max / Max 2
+              { vendorId: 0x1BBB }  // RayNeo / TCL NXTWEAR
+            ]
+          });
+          let allDevs = devices && devices.length ? devices : await navigator.hid.requestDevice({ filters: [] });
+          if (!allDevs || !allDevs.length) return;
+
+          for (const d of allDevs) {
+            try {
+              if (!d.opened) await d.open();
+            } catch (openErr) {}
+
+            // If VITURE glasses (Vendor ID 0x35CA), send the 0xFF 0xFE CmdIMU (0x0015) activation packet
+            if (d.vendorId === 0x35CA) {
+              const enablePkt = buildVitureEnableImuPacket(true, 1);
+              const padded64 = new Uint8Array(64);
+              padded64.set(enablePkt);
+              try { await d.sendReport(0x00, enablePkt); } catch (e1) {}
+              try { await d.sendReport(0x00, padded64); } catch (e2) {}
+            }
+
+            d.addEventListener('inputreport', (event) => {
+              const dv = event.data;
+              if (!dv || dv.byteLength < 12) return;
+              const now = performance.now();
+              const dt = lastHidTime ? Math.min(0.05, Math.max(0.0005, (now - lastHidTime) / 1000)) : 0.001;
+              lastHidTime = now;
+
+              // 1. Check for VITURE MCU Orientation Packet (Header 0xFF 0xFC or vendorId 0x35CA with big-endian float32 Euler angles at offset 18 or 17)
+              if (dv.byteLength >= 29) {
+                const b0 = dv.getUint8(0);
+                const b1 = dv.getUint8(1);
+                let vitureOffset = -1;
+                if (b0 === 0xFF && (b1 === 0xFC || b1 === 0xFD)) {
+                  vitureOffset = 18;
+                } else if (event.reportId === 0xFF && (b0 === 0xFC || b0 === 0xFD)) {
+                  vitureOffset = 17;
+                } else if (d.vendorId === 0x35CA && dv.byteLength >= 30) {
+                  vitureOffset = 18;
+                }
+                if (vitureOffset >= 0 && vitureOffset + 12 <= dv.byteLength) {
+                  // VITURE Euler angles are Big-Endian float32 in degrees: [Z (roll), X (pitch), Y (yaw)]
+                  const eZ = dv.getFloat32(vitureOffset, false);
+                  const eX = dv.getFloat32(vitureOffset + 4, false);
+                  const eY = dv.getFloat32(vitureOffset + 8, false);
+                  if (
+                    Number.isFinite(eZ) && Number.isFinite(eX) && Number.isFinite(eY) &&
+                    Math.abs(eZ) <= 360 && Math.abs(eX) <= 360 && Math.abs(eY) <= 360 &&
+                    (Math.abs(eZ) > 1e-4 || Math.abs(eX) > 1e-4 || Math.abs(eY) > 1e-4)
+                  ) {
+                    rawImuPose.roll = eZ;
+                    rawImuPose.pitch = eX;
+                    rawImuPose.yaw = eY;
+                    return;
+                  }
+                }
+              }
+
+              // 2. XREAL Air / Rokid / Generic Little-Endian Float32 Gyroscope Integration
+              for (let off = 0; off <= dv.byteLength - 12; off += 2) {
+                const gx = dv.getFloat32(off, true);
+                const gy = dv.getFloat32(off + 4, true);
+                const gz = dv.getFloat32(off + 8, true);
+                if (
+                  Number.isFinite(gx) && Number.isFinite(gy) && Number.isFinite(gz) &&
+                  Math.abs(gx) < 25 && Math.abs(gy) < 25 && Math.abs(gz) < 25 &&
+                  (Math.abs(gx) > 1e-5 || Math.abs(gy) > 1e-5 || Math.abs(gz) > 1e-5)
+                ) {
+                  rawImuPose.pitch = Math.max(-89, Math.min(89, rawImuPose.pitch + gx * dt * (180 / Math.PI)));
+                  rawImuPose.yaw += gy * dt * (180 / Math.PI);
+                  rawImuPose.roll = Math.max(-89, Math.min(89, rawImuPose.roll + gz * dt * (180 / Math.PI)));
+                  break;
+                }
+              }
+            });
+          }
+
+          webHidDevice = allDevs[0];
+          webHidConnected = true;
+          lastHidTime = performance.now();
+          updateImuStatusUI();
+          const brandName = webHidDevice.vendorId === 0x35CA ? 'VITURE Glasses' : (webHidDevice.productName || 'XR Glasses');
+          showToast(`Connected via USB WebHID: ${brandName}`);
+        } catch (err) {
+          showToast('WebHID connection canceled or handled by OS — using WebSocket Bridge');
+        }
+      }
+
+      const connectWebHidBtn = document.getElementById('connectWebHidBtn');
+      if (connectWebHidBtn) {
+        connectWebHidBtn.addEventListener('click', connectDirectWebHid);
+      }
+
+      window.addEventListener('deviceorientation', (e) => {
+        if (!wsConnected && !webHidConnected && !demoImuMotion && e.alpha !== null) {
+          rawImuPose.yaw = e.alpha || 0;
+          rawImuPose.pitch = e.beta || 0;
+          rawImuPose.roll = e.gamma || 0;
+        }
+      });
+
+      // --- POP-OUT SECOND MONITOR WINDOW FOR XREAL ONE PRO GLASSES (WITH 3-SECOND AUTO-HIDE PROGRESS BAR) ---
+      function openGlassesPopoutWindow() {
+        if (popoutWindow && !popoutWindow.closed) {
+          popoutWindow.focus();
+          return;
+        }
+        popoutWindow = window.open('', 'XREAL_One_Pro_SBS_Display', 'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no');
+        if (!popoutWindow) {
+          showToast('Pop-up blocked by browser — use "Enter Glasses Fullscreen" instead');
+          return;
+        }
+        popoutWindow.document.write(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>XREAL One Pro — Full-SBS 3840×1080 Output</title>
+            <style>
+              html, body { margin: 0; padding: 0; width: 100vw; height: 100vh; background: #000; overflow: hidden; font-family: Inter, system-ui, sans-serif; user-select: none; }
+              canvas { width: 100vw; height: 100vh; display: block; }
+              #fsOverlayBar {
+                position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
+                background: rgba(9, 13, 22, 0.92); color: #f8fafc;
+                border: 1px solid rgba(56, 189, 248, 0.5); padding: 10px 18px;
+                border-radius: 14px; font-size: 13px; z-index: 20;
+                display: flex; align-items: center; gap: 12px;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+                transition: opacity 0.4s ease;
+              }
+              #fsEnterBtn {
+                background: #38bdf8; color: #090b10; border: none;
+                padding: 6px 14px; border-radius: 8px; font-weight: 700;
+                font-size: 12px; cursor: pointer;
+              }
+              #fsEnterBtn:hover { background: #7dd3fc; }
+              :fullscreen #fsOverlayBar { opacity: 0; pointer-events: none; }
+              #popFsHud {
+                position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+                width: min(860px, 92vw);
+                background: rgba(9, 13, 22, 0.88); backdrop-filter: blur(10px);
+                border: 1px solid rgba(255, 255, 255, 0.16);
+                border-radius: 16px; padding: 10px 16px; z-index: 30;
+                display: flex; align-items: center; gap: 10px;
+                color: #f1f5f9; font-size: 12px;
+                box-shadow: 0 12px 32px rgba(0,0,0,0.85);
+                transition: opacity 0.45s ease;
+              }
+              #popFsHud.hud-hidden { opacity: 0; pointer-events: none; }
+              .pop-btn {
+                background: #1e293b; color: #f1f5f9; border: 1px solid rgba(255,255,255,0.14);
+                padding: 6px 11px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer;
+              }
+              .pop-btn-primary {
+                background: #38bdf8; color: #090b10; border: none;
+                padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer;
+              }
+              #popTimelineSlider {
+                flex: 1; accent-color: #38bdf8; cursor: pointer; height: 6px;
+              }
+            </style>
+          </head>
+          <body>
+            <div id="fsOverlayBar">
+              <span id="hint">Step 1: Move window to XREAL One Pro display • Step 2: Enable 3D Mode on glasses • Step 3:</span>
+              <button id="fsEnterBtn">Enter Borderless Fullscreen (or Press F11)</button>
+            </div>
+            <div id="popFsHud">
+              <button id="popPlayPauseBtn" class="pop-btn-primary">Play/Pause</button>
+              <button id="popSeekBackBtn" class="pop-btn">-15s</button>
+              <span id="popCurTime" style="font-family: monospace; color: #38bdf8; min-width: 40px; text-align: right;">00:00</span>
+              <input id="popTimelineSlider" type="range" min="0" max="100" step="0.1" value="0" />
+              <span id="popDurTime" style="font-family: monospace; color: #94a3b8; min-width: 40px;">01:00</span>
+              <button id="popSeekFwdBtn" class="pop-btn">+15s</button>
+              <button id="popZeroBtn" class="pop-btn">Zero View (Z)</button>
+            </div>
+            <canvas id="mirrorCanvas" width="1920" height="1080"></canvas>
+            <script>
+              const btn = document.getElementById('fsEnterBtn');
+              const statusTxt = document.getElementById('hint');
+              const popHud = document.getElementById('popFsHud');
+              let popHideTimer = null;
+              function wakePopHud() {
+                if (!popHud) return;
+                popHud.classList.remove('hud-hidden');
+                document.body.style.cursor = 'default';
+                if (popHideTimer) clearTimeout(popHideTimer);
+                popHideTimer = setTimeout(() => {
+                  popHud.classList.add('hud-hidden');
+                  if (document.fullscreenElement) document.body.style.cursor = 'none';
+                }, 3000);
+              }
+              ['pointermove', 'pointerdown', 'wheel', 'keydown', 'click'].forEach(ev => {
+                window.addEventListener(ev, wakePopHud, { passive: true });
+              });
+              wakePopHud();
+              function updatePopStatus() {
+                const w = window.innerWidth;
+                const h = window.innerHeight;
+                const is329 = (w / h) > 2.6;
+                if (statusTxt) {
+                  statusTxt.textContent = is329
+                    ? ('3840×1080 3D SBS Display Detected (' + w + '×' + h + ') — Click to lock Fullscreen:')
+                    : ('Window ' + w + '×' + h + ' (Move to glasses & click Fullscreen):');
+                }
+              }
+              window.addEventListener('resize', updatePopStatus);
+              updatePopStatus();
+              if (btn) {
+                btn.addEventListener('click', () => {
+                  document.documentElement.requestFullscreen().catch(()=>{});
+                });
+              }
+              document.body.addEventListener('dblclick', (e) => {
+                if (e.target && e.target.closest('#popFsHud')) return;
+                if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{});
+                else document.exitFullscreen().catch(()=>{});
+              });
+            <\/script>
+          </body>
+          </html>
+        `);
+        popoutWindow.document.close();
+        const mirrorCanvas = popoutWindow.document.getElementById('mirrorCanvas');
+        const popPlayPauseBtn = popoutWindow.document.getElementById('popPlayPauseBtn');
+        const popSeekBackBtn = popoutWindow.document.getElementById('popSeekBackBtn');
+        const popSeekFwdBtn = popoutWindow.document.getElementById('popSeekFwdBtn');
+        const popZeroBtn = popoutWindow.document.getElementById('popZeroBtn');
+        const popSlider = popoutWindow.document.getElementById('popTimelineSlider');
+
+        if (popPlayPauseBtn) popPlayPauseBtn.addEventListener('click', togglePlayPause);
+        if (popSeekBackBtn) popSeekBackBtn.addEventListener('click', () => seekRelative(-15));
+        if (popSeekFwdBtn) popSeekFwdBtn.addEventListener('click', () => seekRelative(15));
+        if (popZeroBtn) popZeroBtn.addEventListener('click', applyZeroView);
+        if (popSlider) {
+          popSlider.addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            if (usingProceduralScene) {
+              procElapsed = val;
+            } else if (videoEl.duration) {
+              videoEl.currentTime = val;
+              if (hasSeparateDashAudio && audioEl) audioEl.currentTime = val;
+            }
+          });
+        }
+
+        if (mirrorCanvas) {
+          popoutCtx = mirrorCanvas.getContext('2d');
+          mirrorCanvas.addEventListener('wheel', handleWheelZoom, { passive: false });
+          let popDragging = false;
+          let popLastX = 0;
+          let popLastY = 0;
+          mirrorCanvas.addEventListener('pointerdown', (e) => {
+            popDragging = true;
+            popLastX = e.clientX;
+            popLastY = e.clientY;
+            mirrorCanvas.setPointerCapture(e.pointerId);
+          });
+          mirrorCanvas.addEventListener('pointermove', (e) => {
+            if (!popDragging) return;
+            const dx = e.clientX - popLastX;
+            const dy = e.clientY - popLastY;
+            popLastX = e.clientX;
+            popLastY = e.clientY;
+            const ySign = getVerticalMouseSign();
+            manualOffset.yaw -= dx * 0.22;
+            manualOffset.pitch = Math.max(-88, Math.min(88, manualOffset.pitch + ySign * dy * 0.22));
+          });
+          mirrorCanvas.addEventListener('pointerup', () => { popDragging = false; });
+          mirrorCanvas.addEventListener('pointercancel', () => { popDragging = false; });
+        }
+        popoutWindow.addEventListener('keydown', (e) => {
+          const k = e.key.toLowerCase();
+          if (k === 'f') {
+            e.preventDefault();
+            if (!popoutWindow.document.fullscreenElement) {
+              popoutWindow.document.documentElement.requestFullscreen().catch(()=>{});
+            } else {
+              popoutWindow.document.exitFullscreen().catch(()=>{});
+            }
+          } else {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: e.key }));
+          }
+        });
+        function popoutRafLoop() {
+          if (!popoutWindow || popoutWindow.closed) return;
+          popoutWindow.requestAnimationFrame(popoutRafLoop);
+          renderFrame(performance.now());
+        }
+        popoutWindow.requestAnimationFrame(popoutRafLoop);
+        showToast('Opened Glasses Display window — drag it to your XREAL One Pro screen!');
+      }
+
+      // --- FULLSCREEN HANDLER ---
+      let inCssFullscreen = false;
+      function toggleGlassesFullscreen() {
+        const container = document.getElementById('viewportContainer');
+        const exitBtn = document.getElementById('hudExitFsBtn');
+        triggerFullscreenHudActivity();
+        if (!document.fullscreenElement && !inCssFullscreen) {
+          if (container && container.requestFullscreen) {
+            container.requestFullscreen().catch(() => {
+              document.body.classList.add('fullscreen-sbs-active');
+              inCssFullscreen = true;
+              if (exitBtn) exitBtn.classList.remove('hidden');
+              resizeRenderer();
+            });
+          } else {
+            document.body.classList.add('fullscreen-sbs-active');
+            inCssFullscreen = true;
+            if (exitBtn) exitBtn.classList.remove('hidden');
+            resizeRenderer();
+          }
+        } else {
+          if (document.fullscreenElement) {
+            document.exitFullscreen().catch(() => {});
+          }
+          document.body.classList.remove('fullscreen-sbs-active');
+          inCssFullscreen = false;
+          if (exitBtn) exitBtn.classList.add('hidden');
+          if (viewportContainerEl) viewportContainerEl.style.cursor = '';
+          resizeRenderer();
+        }
+      }
+
+      document.addEventListener('fullscreenchange', () => {
+        const exitBtn = document.getElementById('hudExitFsBtn');
+        triggerFullscreenHudActivity();
+        if (document.fullscreenElement) {
+          if (exitBtn) exitBtn.classList.remove('hidden');
+        } else if (!inCssFullscreen) {
+          if (exitBtn) exitBtn.classList.add('hidden');
+          if (viewportContainerEl) viewportContainerEl.style.cursor = '';
+        }
+        setTimeout(resizeRenderer, 60);
+      });
+
+      // --- VIDEO PLAYBACK & MEDIA CONTROLS (WITH SPLIT DASH AUDIO SYNCHRONIZATION) ---
+      function formatTime(sec) {
+        if (!isFinite(sec) || sec < 0) return '00:00';
+        const m = Math.floor(sec / 60);
+        const s = Math.floor(sec % 60);
+        return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+      }
+
+      let procPaused = false;
+      let procElapsed = 0;
+
+      function syncAllTimeUi(curSec, durSec) {
+        const curStr = formatTime(curSec);
+        const durStr = formatTime(durSec);
+        if (currentTimeLabel) currentTimeLabel.textContent = curStr;
+        if (durationTimeLabel) durationTimeLabel.textContent = durStr;
+        if (fsCurrentTimeLabel) fsCurrentTimeLabel.textContent = curStr;
+        if (fsDurationTimeLabel) fsDurationTimeLabel.textContent = durStr;
+
+        if (timelineSlider && !timelineSlider.matches(':active')) {
+          timelineSlider.max = String(durSec || 100);
+          timelineSlider.value = String(curSec);
+        }
+        if (fsTimelineSlider && !fsTimelineSlider.matches(':active') && !isScrubbingTimeline) {
+          fsTimelineSlider.max = String(durSec || 100);
+          fsTimelineSlider.value = String(curSec);
+        }
+        if (popoutWindow && !popoutWindow.closed) {
+          const pCur = popoutWindow.document.getElementById('popCurTime');
+          const pDur = popoutWindow.document.getElementById('popDurTime');
+          const pSlid = popoutWindow.document.getElementById('popTimelineSlider');
+          if (pCur) pCur.textContent = curStr;
+          if (pDur) pDur.textContent = durStr;
+          if (pSlid && !pSlid.matches(':active')) {
+            pSlid.max = String(durSec || 100);
+            pSlid.value = String(curSec);
+          }
+        }
+      }
+
+      function updatePlayPauseLabels(isPaused) {
+        if (usingProceduralScene) {
+          if (playPauseText) playPauseText.textContent = isPaused ? 'Resume Demo Scene' : 'Pause Demo Scene';
+          if (fsPlayPauseBtn) fsPlayPauseBtn.textContent = isPaused ? 'Play' : 'Pause';
+        } else {
+          if (playPauseText) playPauseText.textContent = isPaused ? 'Play' : 'Pause';
+          if (fsPlayPauseBtn) fsPlayPauseBtn.textContent = isPaused ? 'Play' : 'Pause';
+        }
+      }
+
+      function togglePlayPause() {
+        triggerFullscreenHudActivity();
+        if (usingProceduralScene) {
+          procPaused = !procPaused;
+          updatePlayPauseLabels(procPaused);
+          return;
+        }
+        if (videoEl.paused) {
+          videoEl.play().then(() => {
+            if (hasSeparateDashAudio && audioEl) {
+              audioEl.currentTime = videoEl.currentTime;
+              audioEl.play().catch(() => {});
+            }
+            updatePlayPauseLabels(false);
+          }).catch(() => {
+            showToast('Unable to start playback — check video format');
+          });
+        } else {
+          videoEl.pause();
+          if (hasSeparateDashAudio && audioEl) audioEl.pause();
+          updatePlayPauseLabels(true);
+        }
+      }
+
+      function seekRelative(deltaSec) {
+        triggerFullscreenHudActivity();
+        if (usingProceduralScene) {
+          procElapsed = Math.max(0, procElapsed + deltaSec);
+          syncAllTimeUi(procElapsed % 60, 60);
+          showToast(`Seeked ${deltaSec > 0 ? '+' : ''}${deltaSec}s`);
+          return;
+        }
+        if (videoEl.duration) {
+          const nextT = Math.max(0, Math.min(videoEl.duration, videoEl.currentTime + deltaSec));
+          videoEl.currentTime = nextT;
+          if (hasSeparateDashAudio && audioEl) audioEl.currentTime = nextT;
+          syncAllTimeUi(nextT, videoEl.duration);
+        }
+      }
+
+      videoEl.addEventListener('loadedmetadata', () => {
+        syncAllTimeUi(videoEl.currentTime || 0, videoEl.duration || 100);
+      });
+
+      videoEl.addEventListener('timeupdate', () => {
+        if (!usingProceduralScene) {
+          syncAllTimeUi(videoEl.currentTime, videoEl.duration || 100);
+          // Keep split DASH audio track tightly synced with video track
+          if (hasSeparateDashAudio && audioEl && !videoEl.paused) {
+            if (Math.abs((audioEl.currentTime || 0) - videoEl.currentTime) > 0.3) {
+              audioEl.currentTime = videoEl.currentTime;
+            }
+            if (audioEl.paused) {
+              audioEl.play().catch(() => {});
+            }
+          }
+        }
+      });
+
+      videoEl.addEventListener('play', () => {
+        if (hasSeparateDashAudio && audioEl) {
+          audioEl.currentTime = videoEl.currentTime;
+          audioEl.play().catch(() => {});
+        }
+        updatePlayPauseLabels(false);
+      });
+      videoEl.addEventListener('pause', () => {
+        if (hasSeparateDashAudio && audioEl) audioEl.pause();
+        updatePlayPauseLabels(true);
+      });
+      videoEl.addEventListener('seeked', () => {
+        if (hasSeparateDashAudio && audioEl) {
+          audioEl.currentTime = videoEl.currentTime;
+        }
+      });
+
+      // Local File Loader
+      const localFileInput = document.getElementById('localFileInput');
+      if (localFileInput) {
+        localFileInput.addEventListener('change', (e) => {
+          const file = e.target.files && e.target.files[0];
+          if (!file) return;
+          const objUrl = URL.createObjectURL(file);
+          startResolvedVideoStream(objUrl, file.name, null);
+        });
+      }
+
+      // YouTube & Stream URL Loader
+      const loadUrlBtn = document.getElementById('loadUrlBtn');
+      const streamUrlInput = document.getElementById('streamUrlInput');
+      if (loadUrlBtn && streamUrlInput) {
+        loadUrlBtn.addEventListener('click', async () => {
+          const url = streamUrlInput.value.trim();
+          if (!url) {
+            showToast('Please enter a YouTube VR URL or direct video stream URL');
+            return;
+          }
+          if (isYouTubeUrl(url)) {
+            if (mediaTitleLabel) mediaTitleLabel.textContent = 'Buffering YouTube VR stream via local bridge (yt-dlp)...';
+            showToast('Buffering YouTube VR stream via local bridge (takes ~3–10s)...');
+            if (wsConnection && wsConnected) {
+              try {
+                wsConnection.send(JSON.stringify({ cmd: 'resolve_youtube', url: url }));
+                return;
+              } catch (e) {}
+            }
+            try {
+              const resp = await fetch(`http://127.0.0.1:8766/yt_resolve?url=${encodeURIComponent(url)}`);
+              const data = await resp.json();
+              if (data && data.ok && data.stream_url) {
+                startResolvedVideoStream(
+                  data.stream_url,
+                  data.title ? `YouTube VR: ${data.title}` : url,
+                  data.audio_url || null
+                );
+              } else {
+                showToast(`YouTube Error: ${(data && data.error) || 'Failed to resolve stream'}`);
+              }
+            } catch (err) {
+              showToast('Keep xreal_imu_bridge.py (or vr2xr_PC_Studio.exe) running to stream YouTube VR videos!');
+            }
+            return;
+          }
+          startResolvedVideoStream(url, url, null);
+        });
+      }
+
+      // Switch back to 3D Test Grid
+      const loadTestSceneBtn = document.getElementById('loadTestSceneBtn');
+      if (loadTestSceneBtn) {
+        loadTestSceneBtn.addEventListener('click', () => {
+          videoEl.pause();
+          if (audioEl) audioEl.pause();
+          hasSeparateDashAudio = false;
+          usingProceduralScene = true;
+          procPaused = false;
+          if (mediaTitleLabel) mediaTitleLabel.textContent = 'Built-in 3D Calibration Test Scene (Procedural VR180 Stereo Dome)';
+          updatePlayPauseLabels(false);
+          rebuildProjectionMeshes();
+          showToast('Switched to Built-in 3D VR180 Calibration Grid');
+        });
+      }
+
+      // --- WIRE UP ALL UI CONTROLS & SYNC INITIAL STATE ---
+      function syncUiFromState() {
+        document.querySelectorAll('.proj-mode-btn').forEach((btn) => {
+          const mode = btn.getAttribute('data-proj');
+          if (mode === state.projMode) {
+            btn.className = 'proj-mode-btn py-1.5 rounded-lg font-semibold bg-sky-500 text-slate-950 transition';
+          } else {
+            btn.className = 'proj-mode-btn py-1.5 rounded-lg font-medium text-slate-300 hover:text-white transition';
+          }
+        });
+
+        const zoomSlider = document.getElementById('zoomSlider');
+        const zoomVal = document.getElementById('zoomValueLabel');
+        const hudZoom = document.getElementById('hudZoom');
+        const hudZoomResetBtn = document.getElementById('hudZoomResetBtn');
+        const formattedZoom = `${Number(state.zoom || 1.0).toFixed(2)}×`;
+        if (zoomSlider) zoomSlider.value = String(state.zoom || 1.0);
+        if (zoomVal) zoomVal.textContent = formattedZoom;
+        if (hudZoom) hudZoom.textContent = formattedZoom;
+        if (hudZoomResetBtn) hudZoomResetBtn.textContent = formattedZoom;
+
+        const fovSlider = document.getElementById('fovSlider');
+        const fovVal = document.getElementById('fovValueLabel');
+        if (fovSlider) fovSlider.value = String(state.fov);
+        if (fovVal) fovVal.textContent = `${state.fov}°`;
+
+        const ipdSlider = document.getElementById('ipdSlider');
+        const ipdVal = document.getElementById('ipdValueLabel');
+        if (ipdSlider) ipdSlider.value = String(state.ipdOffsetPx);
+        if (ipdVal) ipdVal.textContent = `${state.ipdOffsetPx > 0 ? '+' : ''}${state.ipdOffsetPx} px`;
+
+        const sensSlider = document.getElementById('imuSensSlider');
+        const sensVal = document.getElementById('imuSensValue');
+        if (sensSlider) sensSlider.value = String(state.imuSensitivity);
+        if (sensVal) sensVal.textContent = `${Number(state.imuSensitivity).toFixed(2)}×`;
+
+        const smoothSlider = document.getElementById('imuSmoothSlider');
+        const smoothVal = document.getElementById('imuSmoothValue');
+        if (smoothSlider) smoothSlider.value = String(Math.round(state.imuSmoothing * 100));
+        if (smoothVal) smoothVal.textContent = `${Math.round(state.imuSmoothing * 100)}%`;
+
+        const toggleImuBtn = document.getElementById('toggleImuBtn');
+        if (toggleImuBtn) {
+          if (state.imuEnabled) {
+            toggleImuBtn.textContent = 'IMU: ENABLED';
+            toggleImuBtn.className = 'px-3 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-semibold transition';
+          } else {
+            toggleImuBtn.textContent = 'IMU: PAUSED';
+            toggleImuBtn.className = 'px-3 py-1 rounded-lg bg-slate-800 text-slate-400 border border-slate-700 text-xs font-semibold transition';
+          }
+        }
+
+        const poseModeBtn = document.getElementById('poseModeBtn');
+        if (poseModeBtn) {
+          poseModeBtn.textContent = state.poseMode === 'smooth' ? 'Mode: Smooth IMU' : 'Mode: Raw IMU';
+        }
+
+        const renderSbsBtn = document.getElementById('renderSbsBtn');
+        const renderHalfSbsBtn = document.getElementById('renderHalfSbsBtn');
+        const renderMonoBtn = document.getElementById('renderMonoBtn');
+        const divider = document.getElementById('sbsDivider');
+        const activeCls = 'py-1.5 px-2 rounded-lg bg-sky-500/20 text-sky-300 border border-sky-500/30 font-medium text-[11px]';
+        const inactiveCls = 'py-1.5 px-2 rounded-lg bg-slate-800 text-slate-400 hover:text-white font-medium text-[11px]';
+        if (renderSbsBtn) renderSbsBtn.className = state.renderMode === 'sbs' ? activeCls : inactiveCls;
+        if (renderHalfSbsBtn) renderHalfSbsBtn.className = state.renderMode === 'halfsbs' ? activeCls : inactiveCls;
+        if (renderMonoBtn) renderMonoBtn.className = state.renderMode === 'mono' ? activeCls : inactiveCls;
+        if (divider) {
+          if (state.renderMode === 'mono') divider.classList.add('hidden');
+          else divider.classList.remove('hidden');
+        }
+
+        const swapBtn = document.getElementById('swapEyesBtn');
+        if (swapBtn) {
+          swapBtn.className = state.swapEyes
+            ? 'px-2 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 font-medium'
+            : 'px-2 py-1 rounded-lg bg-slate-800 text-slate-400 hover:text-white font-medium';
+        }
+
+        const invYaw = document.getElementById('invertYawChk');
+        const invPitch = document.getElementById('invertPitchChk');
+        const lockRoll = document.getElementById('lockRollChk');
+        const revMouseY = document.getElementById('reverseMouseYChk');
+        if (invYaw) invYaw.checked = !!state.invertYaw;
+        if (invPitch) invPitch.checked = !!state.invertPitch;
+        if (lockRoll) lockRoll.checked = !!state.lockRoll;
+        if (revMouseY) revMouseY.checked = !!state.reverseMouseY;
+
+        const wsInput = document.getElementById('wsEndpointInput');
+        if (wsInput) wsInput.value = state.wsUrl;
+
+        updateModeBadges();
+      }
+
+      // Navigation Tabs
+      const views = {
+        player: document.getElementById('viewPlayer'),
+        wizard: document.getElementById('viewWizard'),
+        bridge: document.getElementById('viewBridge')
+      };
+      const tabBtns = {
+        player: document.getElementById('tabPlayerBtn'),
+        wizard: document.getElementById('tabWizardBtn'),
+        bridge: document.getElementById('tabBridgeBtn')
+      };
+
+      function switchTab(target) {
+        Object.keys(views).forEach((k) => {
+          if (views[k]) {
+            if (k === target) {
+              views[k].classList.remove('hidden');
+              views[k].classList.add('flex');
+            } else {
+              views[k].classList.add('hidden');
+              views[k].classList.remove('flex');
+            }
+          }
+          if (tabBtns[k]) {
+            if (k === target) {
+              tabBtns[k].className = 'px-3 py-1.5 rounded-lg text-xs font-semibold transition bg-sky-500 text-slate-950';
+            } else {
+              tabBtns[k].className = 'px-3 py-1.5 rounded-lg text-xs font-medium transition text-slate-300 hover:text-white hover:bg-slate-800/60';
+            }
+          }
+        });
+        if (target === 'player') {
+          setTimeout(resizeRenderer, 30);
+        }
+      }
+
+      if (tabBtns.player) tabBtns.player.addEventListener('click', () => switchTab('player'));
+      if (tabBtns.wizard) tabBtns.wizard.addEventListener('click', () => switchTab('wizard'));
+      if (tabBtns.bridge) tabBtns.bridge.addEventListener('click', () => switchTab('bridge'));
+
+      // Button Listeners
+      document.getElementById('zeroViewBtn').addEventListener('click', applyZeroView);
+      document.getElementById('hudZeroViewBtn').addEventListener('click', applyZeroView);
+      document.getElementById('calibrateImuBtn').addEventListener('click', calibrateStationaryBias);
+      document.getElementById('connectWsBtn').addEventListener('click', () => connectImuBridge(false));
+      document.getElementById('downloadAppBtn').addEventListener('click', () => {
+        const htmlContent = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+        const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'vr2xr_pc_player.html';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          URL.revokeObjectURL(a.href);
+          a.remove();
+        }, 500);
+        showToast('Downloaded vr2xr_pc_player.html — double-click it on your PC anytime!');
+      });
+      document.getElementById('popoutGlassesBtn').addEventListener('click', openGlassesPopoutWindow);
+      document.getElementById('fullscreenGlassesBtn').addEventListener('click', toggleGlassesFullscreen);
+      document.getElementById('hudExitFsBtn').addEventListener('click', toggleGlassesFullscreen);
+
+      // Wizard Buttons
+      document.getElementById('wizardRunCalibBtn').addEventListener('click', calibrateStationaryBias);
+      document.getElementById('wizardOpenPopoutBtn').addEventListener('click', openGlassesPopoutWindow);
+      document.getElementById('wizardZeroNowBtn').addEventListener('click', () => {
+        applyZeroView();
+        switchTab('player');
+      });
+      document.getElementById('wizardFinishToPlayerBtn').addEventListener('click', () => {
+        applyZeroView();
+        switchTab('player');
+      });
+
+      const simBtn = document.getElementById('simulateImuToggleBtn');
+      if (simBtn) {
+        simBtn.addEventListener('click', () => {
+          demoImuMotion = !demoImuMotion;
+          simBtn.textContent = `Toggle Live IMU Demo Motion: ${demoImuMotion ? 'ON' : 'OFF'}`;
+          updateImuStatusUI();
+          showToast(demoImuMotion ? 'Simulated XREAL One Pro head tracking enabled' : 'Simulated head tracking stopped');
+        });
+      }
+
+      if (playPauseBtn) playPauseBtn.addEventListener('click', togglePlayPause);
+      if (fsPlayPauseBtn) fsPlayPauseBtn.addEventListener('click', togglePlayPause);
+      document.getElementById('seekBack15Btn').addEventListener('click', () => seekRelative(-15));
+      document.getElementById('seekFwd15Btn').addEventListener('click', () => seekRelative(15));
+      document.getElementById('fsSeekBackBtn').addEventListener('click', () => seekRelative(-15));
+      document.getElementById('fsSeekFwdBtn').addEventListener('click', () => seekRelative(15));
+
+      const loopBtn = document.getElementById('loopToggleBtn');
+      if (loopBtn) {
+        loopBtn.addEventListener('click', () => {
+          state.loopVideo = !state.loopVideo;
+          videoEl.loop = state.loopVideo;
+          if (audioEl) audioEl.loop = state.loopVideo;
+          loopBtn.textContent = `Loop: ${state.loopVideo ? 'ON' : 'OFF'}`;
+          saveState();
+        });
+      }
+
+      function handleTimelineScrub(val) {
+        triggerFullscreenHudActivity();
+        if (usingProceduralScene) {
+          procElapsed = val;
+        } else if (videoEl.duration) {
+          videoEl.currentTime = val;
+          if (hasSeparateDashAudio && audioEl) audioEl.currentTime = val;
+        }
+      }
+
+      if (timelineSlider) {
+        timelineSlider.addEventListener('input', (e) => {
+          handleTimelineScrub(parseFloat(e.target.value));
+        });
+      }
+
+      if (fsTimelineSlider) {
+        fsTimelineSlider.addEventListener('pointerdown', () => {
+          isScrubbingTimeline = true;
+          triggerFullscreenHudActivity();
+        });
+        fsTimelineSlider.addEventListener('pointerup', () => {
+          isScrubbingTimeline = false;
+          triggerFullscreenHudActivity();
+        });
+        fsTimelineSlider.addEventListener('input', (e) => {
+          handleTimelineScrub(parseFloat(e.target.value));
+        });
+      }
+
+      const volSlider = document.getElementById('volumeSlider');
+      const muteBtn = document.getElementById('muteBtn');
+      if (volSlider) {
+        volSlider.addEventListener('input', (e) => {
+          const v = parseFloat(e.target.value);
+          videoEl.volume = v;
+          videoEl.muted = (v === 0);
+          if (audioEl) {
+            audioEl.volume = v;
+            audioEl.muted = (v === 0);
+          }
+          if (muteBtn) muteBtn.textContent = videoEl.muted ? 'Muted' : 'Vol';
+        });
+      }
+      if (muteBtn) {
+        muteBtn.addEventListener('click', () => {
+          videoEl.muted = !videoEl.muted;
+          if (audioEl) audioEl.muted = videoEl.muted;
+          muteBtn.textContent = videoEl.muted ? 'Muted' : 'Vol';
+        });
+      }
+
+      const speedSelect = document.getElementById('speedSelect');
+      if (speedSelect) {
+        speedSelect.addEventListener('change', (e) => {
+          const r = parseFloat(e.target.value) || 1.0;
+          videoEl.playbackRate = r;
+          if (audioEl) audioEl.playbackRate = r;
+        });
+      }
+
+      // IMU & Pose Controls
+      document.getElementById('toggleImuBtn').addEventListener('click', () => {
+        state.imuEnabled = !state.imuEnabled;
+        saveState();
+        syncUiFromState();
+      });
+
+      document.getElementById('poseModeBtn').addEventListener('click', () => {
+        state.poseMode = state.poseMode === 'smooth' ? 'raw' : 'smooth';
+        saveState();
+        syncUiFromState();
+        showToast(`Switched to ${state.poseMode === 'smooth' ? 'Smooth IMU (EMA filtered)' : 'Raw Unfiltered IMU'}`);
+      });
+
+      document.getElementById('imuSensSlider').addEventListener('input', (e) => {
+        state.imuSensitivity = parseFloat(e.target.value);
+        saveState();
+        syncUiFromState();
+      });
+
+      document.getElementById('imuSmoothSlider').addEventListener('input', (e) => {
+        state.imuSmoothing = parseInt(e.target.value, 10) / 100;
+        saveState();
+        syncUiFromState();
+      });
+
+      document.getElementById('invertYawChk').addEventListener('change', (e) => {
+        state.invertYaw = e.target.checked;
+        saveState();
+      });
+      document.getElementById('invertPitchChk').addEventListener('change', (e) => {
+        state.invertPitch = e.target.checked;
+        saveState();
+      });
+      document.getElementById('lockRollChk').addEventListener('change', (e) => {
+        state.lockRoll = e.target.checked;
+        saveState();
+      });
+      const revMouseYChk = document.getElementById('reverseMouseYChk');
+      if (revMouseYChk) {
+        revMouseYChk.addEventListener('change', (e) => {
+          state.reverseMouseY = e.target.checked;
+          saveState();
+          showToast(`Mouse Vertical Y-Axis: ${state.reverseMouseY ? 'Reversed' : 'Standard'}`);
+        });
+      }
+
+      // Projection Controls
+      document.querySelectorAll('.proj-mode-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          state.projMode = btn.getAttribute('data-proj');
+          saveState();
+          syncUiFromState();
+          rebuildProjectionMeshes();
+        });
+      });
+
+      document.getElementById('zoomSlider').addEventListener('input', (e) => {
+        state.zoom = parseFloat(e.target.value);
+        applyCameraZoomAndFov();
+        saveState();
+        syncUiFromState();
+      });
+      document.getElementById('zoomInBtn').addEventListener('click', () => adjustZoom(0.1));
+      document.getElementById('zoomOutBtn').addEventListener('click', () => adjustZoom(-0.1));
+      document.getElementById('zoomResetBtn').addEventListener('click', resetZoom);
+      document.getElementById('hudZoomInBtn').addEventListener('click', () => adjustZoom(0.1));
+      document.getElementById('hudZoomOutBtn').addEventListener('click', () => adjustZoom(-0.1));
+      document.getElementById('hudZoomResetBtn').addEventListener('click', resetZoom);
+
+      document.getElementById('fovSlider').addEventListener('input', (e) => {
+        state.fov = parseInt(e.target.value, 10);
+        applyCameraZoomAndFov();
+        saveState();
+        syncUiFromState();
+      });
+
+      document.getElementById('ipdSlider').addEventListener('input', (e) => {
+        state.ipdOffsetPx = parseInt(e.target.value, 10);
+        saveState();
+        syncUiFromState();
+      });
+
+      document.getElementById('renderSbsBtn').addEventListener('click', () => {
+        state.renderMode = 'sbs';
+        saveState();
+        syncUiFromState();
+      });
+      document.getElementById('renderHalfSbsBtn').addEventListener('click', () => {
+        state.renderMode = 'halfsbs';
+        saveState();
+        syncUiFromState();
+      });
+      document.getElementById('renderMonoBtn').addEventListener('click', () => {
+        state.renderMode = 'mono';
+        saveState();
+        syncUiFromState();
+      });
+      document.getElementById('swapEyesBtn').addEventListener('click', () => {
+        state.swapEyes = !state.swapEyes;
+        saveState();
+        syncUiFromState();
+        rebuildProjectionMeshes();
+      });
+
+      document.getElementById('resetProjBtn').addEventListener('click', () => {
+        state.fov = 95;
+        state.zoom = 1.0;
+        state.ipdOffsetPx = 0;
+        state.projMode = 'vr180';
+        state.swapEyes = false;
+        applyCameraZoomAndFov();
+        saveState();
+        syncUiFromState();
+        rebuildProjectionMeshes();
+        showToast('Projection Zoom, FOV & IPD reset to defaults');
+      });
+
+      // Keyboard Shortcuts
+      window.addEventListener('keydown', (e) => {
+        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
+        triggerFullscreenHudActivity();
+        const k = e.key.toLowerCase();
+        if (k === 'z') {
+          e.preventDefault();
+          applyZeroView();
+        } else if (k === 'r') {
+          e.preventDefault();
+          calibrateStationaryBias();
+        } else if (k === 'm') {
+          e.preventDefault();
+          toggleMouseFreeLookLock();
+        } else if (k === 'f') {
+          e.preventDefault();
+          toggleGlassesFullscreen();
+        } else if (e.key === ' ') {
+          e.preventDefault();
+          togglePlayPause();
+        } else if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          seekRelative(-15);
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          seekRelative(15);
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          state.fov = Math.max(50, state.fov - 2);
+          cameraLeft.fov = state.fov;
+          cameraRight.fov = state.fov;
+          cameraLeft.updateProjectionMatrix();
+          cameraRight.updateProjectionMatrix();
+          saveState();
+          syncUiFromState();
+        } else if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          state.fov = Math.min(135, state.fov + 2);
+          applyCameraZoomAndFov();
+          saveState();
+          syncUiFromState();
+        } else if (e.key === '+' || e.key === '=') {
+          e.preventDefault();
+          adjustZoom(0.1);
+        } else if (e.key === '-' || e.key === '_') {
+          e.preventDefault();
+          adjustZoom(-0.1);
+        } else if (e.key === '0') {
+          e.preventDefault();
+          resetZoom();
+        }
+      });
+
+      // --- MAIN RENDER LOOP ---
+      const readoutYaw = document.getElementById('readoutYaw');
+      const readoutPitch = document.getElementById('readoutPitch');
+      const readoutRoll = document.getElementById('readoutRoll');
+      const hudYaw = document.getElementById('hudYaw');
+      const hudPitch = document.getElementById('hudPitch');
+      const hudRoll = document.getElementById('hudRoll');
+
+      let lastFrameTime = performance.now();
+      let lastRenderedPerf = 0;
+
+      function pollGamepadHeadTracker() {
+        if (wsConnected || webHidConnected || demoImuMotion) return;
+        if (!navigator.getGamepads) return;
+        try {
+          const pads = navigator.getGamepads();
+          for (let i = 0; i < pads.length; i++) {
+            const gp = pads[i];
+            if (gp && gp.connected && gp.axes && gp.axes.length >= 2) {
+              if (Math.abs(gp.axes[0]) > 0.04 || Math.abs(gp.axes[1]) > 0.04) {
+                rawImuPose.yaw = -gp.axes[0] * 75;
+                rawImuPose.pitch = -gp.axes[1] * 55;
+                if (gp.axes.length >= 3) rawImuPose.roll = gp.axes[2] * 30;
+                break;
+              }
+            }
+          }
+        } catch (e) {}
+      }
+
+      function renderFrame(now) {
+        if (now - lastRenderedPerf < 4) return;
+        lastRenderedPerf = now;
+        const dt = Math.min(0.1, Math.max(0.001, (now - lastFrameTime) / 1000));
+        lastFrameTime = now;
+
+        if (usingProceduralScene && !procPaused) {
+          procElapsed += dt;
+          drawProceduralStereoPattern(procElapsed);
+          procTexture.needsUpdate = true;
+          syncAllTimeUi(procElapsed % 60, 60);
+        }
+
+        pollGamepadHeadTracker();
+
+        if (demoImuMotion && !wsConnected && !webHidConnected) {
+          rawImuPose.yaw = Math.sin(now * 0.0008) * 32;
+          rawImuPose.pitch = Math.cos(now * 0.0011) * 14;
+          rawImuPose.roll = Math.sin(now * 0.0006) * 5;
+        }
+
+        if (padDragging && (padEdgeVelX !== 0 || padEdgeVelY !== 0)) {
+          const ySign = getVerticalMouseSign();
+          manualOffset.yaw -= padEdgeVelX * 45 * dt;
+          manualOffset.pitch = Math.max(-88, Math.min(88, manualOffset.pitch + ySign * padEdgeVelY * 35 * dt));
+        }
+
+        let relYaw = 0;
+        let relPitch = 0;
+        let relRoll = 0;
+        if (state.imuEnabled) {
+          relYaw = (rawImuPose.yaw - imuBias.yaw - imuZeroOffset.yaw) * state.imuSensitivity;
+          relPitch = (rawImuPose.pitch - imuBias.pitch - imuZeroOffset.pitch) * state.imuSensitivity;
+          relRoll = (rawImuPose.roll - imuBias.roll - imuZeroOffset.roll) * state.imuSensitivity;
+          if (state.invertYaw) relYaw = -relYaw;
+          if (state.invertPitch) relPitch = -relPitch;
+          if (state.lockRoll) relRoll = 0;
+        }
+
+        const alpha = (state.poseMode === 'smooth') ? (1.0 - state.imuSmoothing * 0.92) : 1.0;
+        smoothedImu.yaw += (relYaw - smoothedImu.yaw) * alpha;
+        smoothedImu.pitch += (relPitch - smoothedImu.pitch) * alpha;
+        smoothedImu.roll += (relRoll - smoothedImu.roll) * alpha;
+
+        finalPose.yaw = smoothedImu.yaw + manualOffset.yaw;
+        finalPose.pitch = Math.max(-89, Math.min(89, smoothedImu.pitch + manualOffset.pitch));
+        finalPose.roll = smoothedImu.roll;
+
+        cameraRig.rotation.y = THREE.MathUtils.degToRad(finalPose.yaw);
+        cameraRig.rotation.x = THREE.MathUtils.degToRad(finalPose.pitch);
+        cameraRig.rotation.z = THREE.MathUtils.degToRad(finalPose.roll);
+
+        const yawStr = `${finalPose.yaw.toFixed(1)}°`;
+        const pitchStr = `${finalPose.pitch.toFixed(1)}°`;
+        const rollStr = `${finalPose.roll.toFixed(1)}°`;
+        if (readoutYaw) readoutYaw.textContent = yawStr;
+        if (readoutPitch) readoutPitch.textContent = pitchStr;
+        if (readoutRoll) readoutRoll.textContent = rollStr;
+        if (hudYaw) hudYaw.textContent = yawStr;
+        if (hudPitch) hudPitch.textContent = pitchStr;
+        if (hudRoll) hudRoll.textContent = rollStr;
+
+        const container = document.getElementById('viewportContainer');
+        if (container) {
+          const cw = Math.max(320, Math.floor(container.clientWidth));
+          const ch = Math.max(180, Math.floor(container.clientHeight));
+          if (cw !== viewportWidth || ch !== viewportHeight) {
+            viewportWidth = cw;
+            viewportHeight = ch;
+            renderer.setSize(viewportWidth, viewportHeight, false);
+          }
+        }
+
+        const w = viewportWidth;
+        const h = viewportHeight;
+        renderer.setScissorTest(true);
+
+        const resBadge = document.getElementById('detectedResBadge');
+        if (resBadge) {
+          const dispW = (popoutWindow && !popoutWindow.closed) ? popoutWindow.innerWidth : window.innerWidth;
+          const dispH = (popoutWindow && !popoutWindow.closed) ? popoutWindow.innerHeight : window.innerHeight;
+          resBadge.textContent = `${dispW}×${dispH}`;
+        }
+
+        if (state.renderMode === 'sbs' || state.renderMode === 'halfsbs') {
+          const halfW = Math.floor(w / 2);
+          const rightW = w - halfW;
+          const ipdShift = state.ipdOffsetPx;
+          const eyeAspect = state.renderMode === 'sbs' ? (16 / 9) : (halfW / h);
+
+          renderer.setViewport(0, 0, w, h);
+          renderer.setScissor(0, 0, w, h);
+          renderer.clear();
+
+          cameraLeft.aspect = eyeAspect;
+          cameraLeft.updateProjectionMatrix();
+          renderer.setViewport(ipdShift, 0, halfW, h);
+          renderer.setScissor(0, 0, halfW, h);
+          renderer.render(scene, cameraLeft);
+
+          cameraRight.aspect = eyeAspect;
+          cameraRight.updateProjectionMatrix();
+          renderer.setViewport(halfW - ipdShift, 0, rightW, h);
+          renderer.setScissor(halfW, 0, rightW, h);
+          renderer.render(scene, cameraRight);
+        } else {
+          cameraLeft.aspect = w / h;
+          cameraLeft.updateProjectionMatrix();
+          renderer.setViewport(0, 0, w, h);
+          renderer.setScissor(0, 0, w, h);
+          renderer.clear();
+          renderer.render(scene, cameraLeft);
+        }
+
+        renderer.setScissorTest(false);
+
+        if (!usingProceduralScene && videoEl.readyState >= 2) {
+          videoTexture.needsUpdate = true;
+        }
+
+        if (popoutWindow && !popoutWindow.closed && popoutCtx) {
+          try {
+            const mc = popoutCtx.canvas;
+            popoutCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, mc.width, mc.height);
+          } catch (e) {}
+        }
+      }
+
+      function mainRafLoop(now) {
+        requestAnimationFrame(mainRafLoop);
+        renderFrame(now);
+      }
+
+      try {
+        const workerBlob = new Blob([
+          'setInterval(function(){ postMessage(Date.now()); }, 16);'
+        ], { type: 'application/javascript' });
+        const tickerWorker = new Worker(URL.createObjectURL(workerBlob));
+        tickerWorker.onmessage = function() {
+          if ((popoutWindow && !popoutWindow.closed) || document.hidden) {
+            renderFrame(performance.now());
+          }
+        };
+      } catch (e) {}
+
+      // Initialize
+      applyCameraZoomAndFov();
+      syncUiFromState();
+      rebuildProjectionMeshes();
+      resizeRenderer();
+      updateImuStatusUI();
+      triggerFullscreenHudActivity();
+      connectImuBridge(true);
+      requestAnimationFrame(mainRafLoop);
+    })();
+  </script>
+</body>
+</html>
